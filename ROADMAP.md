@@ -10,7 +10,7 @@ your working tree.
 
 - [x] Foundation: workspace, ADRs, CI, governance
 - [x] Changeset model + tolerant unified-diff parser, corpus-tested
-- [ ] Git sources: worktree (incl. untracked), staged, revisions (#1)
+- [x] Git sources: worktree (incl. untracked), staged, revisions (#1)
 - [ ] TUI: sidebar + unified view + vim navigation + help (#2)
 - [ ] Side-by-side view, responsive auto layout (#3)
 - [ ] Syntax highlighting + word-level intra-line diff, lazy (#4)

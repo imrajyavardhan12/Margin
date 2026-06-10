@@ -13,3 +13,8 @@ release notes are hand-curated on top in GitHub Releases.
   unified-diff parser covering git extended headers, renames, binary files,
   mode changes, C-quoted paths, no-newline markers, plain `diff -u` output,
   and `git log -p` streams, with a corpus regression suite.
+- `margin-vcs`: git2-backed sources — worktree vs HEAD (untracked files
+  included by default), staged, `show` (incl. root commits), and revision
+  ranges — with rename/copy detection, typed errors, and temp-repo
+  integration tests. The binary prints a changeset summary as a walking
+  skeleton until the TUI lands.

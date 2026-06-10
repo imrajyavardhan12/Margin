@@ -30,8 +30,9 @@ margin-tui = { path = "crates/margin-tui", version = "0.0.1" }
 ratatui = "0.29"
 crossterm = "0.28"
 
-# VCS (ADR 0005)
-git2 = { version = "0.20", default-features = false }
+# VCS (ADR 0005). No network transports; vendored libgit2 keeps builds
+# hermetic for contributors and musl release targets.
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
 
 # Diff + highlighting (ADR 0006)
 similar = { version = "2", features = ["unicode"] }

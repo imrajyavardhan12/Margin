@@ -11,13 +11,19 @@
 //! - New inputs (Jujutsu, GitHub PRs, watch mode) are new `DiffSource` impls,
 //!   not new code paths through the app.
 //! - Tests inject synthetic sources; the TUI is testable without a repo.
-//! - git2 stays quarantined in this crate (ADR 0005) so a future migration
-//!   to gitoxide touches one module.
+//! - git2 stays quarantined in this crate (ADR 0005): no git2 types appear
+//!   in any public signature, so a future migration to gitoxide touches one
+//!   module.
 //!
-//! Implementations (issues #3 and #7): `GitWorktree`, `GitStaged`,
-//! `GitRevRange`, `TwoFiles`, `PatchInput`.
+//! Implemented: [`GitWorktree`], [`GitStaged`], [`GitShow`], [`GitRevRange`].
+//! Coming with issue #5: `TwoFiles`, `PatchInput`.
+
+mod git;
+
+pub use git::{GitRevRange, GitShow, GitStaged, GitWorktree};
 
 use margin_core::Changeset;
+use std::path::PathBuf;
 
 /// Stable identity of a diff across reloads, used to key persisted review
 /// state (viewed files, cursor position).
@@ -33,17 +39,26 @@ pub trait DiffSource {
     fn id(&self) -> DiffId;
 }
 
-/// Errors surfaced to the user as messages, never as panics (ADR 0009).
-#[derive(Debug)]
-pub struct SourceError(pub String);
+/// Errors surfaced to the user as messages, never as panics (ADR-0009).
+/// Typed so the binary can map them to exit codes and the TUI can decide
+/// between "show message" and "give up" (ADR-0007).
+#[derive(Debug, thiserror::Error)]
+pub enum SourceError {
+    #[error("not a git repository (or any parent): {}", path.display())]
+    NotARepository { path: PathBuf },
 
-impl std::fmt::Display for SourceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
+    #[error("cannot resolve revision '{spec}': {reason}")]
+    BadRevspec { spec: String, reason: String },
+
+    #[error("git: {0}")]
+    Git(String),
 }
 
-impl std::error::Error for SourceError {}
+impl From<git2::Error> for SourceError {
+    fn from(err: git2::Error) -> Self {
+        SourceError::Git(err.message().to_string())
+    }
+}
 
 #[cfg(test)]
 mod tests {
