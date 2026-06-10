@@ -22,9 +22,9 @@ categories = ["command-line-utilities", "development-tools"]
 # Versions are deliberately decided up front (see docs/adr/) so dependency
 # choices are an architectural decision, not an accident of `cargo add`.
 [workspace.dependencies]
-margin-core = { path = "crates/margin-core" }
-margin-vcs = { path = "crates/margin-vcs" }
-margin-tui = { path = "crates/margin-tui" }
+margin-core = { path = "crates/margin-core", version = "0.0.1" }
+margin-vcs = { path = "crates/margin-vcs", version = "0.0.1" }
+margin-tui = { path = "crates/margin-tui", version = "0.0.1" }
 
 # TUI (ADR 0002)
 ratatui = "0.29"
