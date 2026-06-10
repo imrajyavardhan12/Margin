@@ -1,0 +1,15 @@
+diff --git a/NEW.md b/NEW.md
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/NEW.md
+@@ -0,0 +1,2 @@
++# New
++hello
+diff --git a/OLD.md b/OLD.md
+deleted file mode 100644
+index 4444444..0000000
+--- a/OLD.md
++++ /dev/null
+@@ -1,1 +0,0 @@
+-# Old

@@ -14,6 +14,6 @@ fn main() {
     println!(
         "margin {} — scaffold build. {} files loaded. See ROADMAP.md.",
         env!("CARGO_PKG_VERSION"),
-        state.changeset.files
+        state.changeset.files.len()
     );
 }

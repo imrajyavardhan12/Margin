@@ -39,6 +39,6 @@ mod tests {
     #[test]
     fn appstate_constructs() {
         let state = AppState::default();
-        assert_eq!(state.changeset.files, 0);
+        assert!(state.changeset.is_empty());
     }
 }

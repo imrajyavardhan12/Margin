@@ -1,0 +1,18 @@
+diff --git a/src/main.rs b/src/main.rs
+index 1111111..2222222 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,5 +1,6 @@ fn main()
+ use std::env;
+
+-fn main() {
+-    println!("hello");
++fn main() {
++    let name = env::args().nth(1);
++    println!("hello {name:?}");
+ }
+@@ -10,3 +11,4 @@
+ fn helper() {
+     // unchanged
+ }
++// trailing comment

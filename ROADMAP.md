@@ -9,7 +9,8 @@ The MVP must be flawless at *viewing* before Margin earns the right to touch
 your working tree.
 
 - [x] Foundation: workspace, ADRs, CI, governance (issue #1)
-- [ ] Changeset model + unified-diff parser, fuzzed (#2)
+- [x] Changeset model + tolerant unified-diff parser, corpus-tested (#2)
+- [ ] Intra-line word-level diff + parser fuzz target (#2)
 - [ ] Git sources: worktree (incl. untracked), staged, revisions (#3)
 - [ ] TUI: sidebar + unified view + vim navigation + help (#4)
 - [ ] Side-by-side view, responsive auto layout (#5)

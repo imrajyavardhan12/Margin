@@ -68,7 +68,7 @@ mod tests {
             Ok(changeset) => changeset,
             Err(err) => panic!("synthetic source failed: {err}"),
         };
-        assert_eq!(changeset.files, 0);
+        assert!(changeset.is_empty());
         assert_eq!(source.id(), DiffId("empty".into()));
     }
 }
