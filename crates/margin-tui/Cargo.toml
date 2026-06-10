@@ -1,0 +1,20 @@
+[package]
+name = "margin-tui"
+description = "Elm-architecture TUI for Margin: state, update, views, themes, keymaps. Depends on margin-core only."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+margin-core.workspace = true
+# ratatui.workspace = true   # enabled by issue #4
+# crossterm.workspace = true # enabled by issue #4
+# syntect.workspace = true   # enabled by issue #6
+
+[dev-dependencies]
+# insta.workspace = true     # frame snapshots, issue #4
+
+[lints]
+workspace = true

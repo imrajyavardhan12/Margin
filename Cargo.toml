@@ -1,0 +1,67 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/margin-core",
+    "crates/margin-vcs",
+    "crates/margin-tui",
+    "crates/margin",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.85" # MSRV policy: stable minus two releases (ADR 0011)
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/imrajyavardhan12/Margin"
+homepage = "https://github.com/imrajyavardhan12/Margin"
+authors = ["Margin contributors"]
+keywords = ["diff", "git", "tui", "terminal", "review"]
+categories = ["command-line-utilities", "development-tools"]
+
+# Pinned once here; member crates inherit with `workspace = true`.
+# Versions are deliberately decided up front (see docs/adr/) so dependency
+# choices are an architectural decision, not an accident of `cargo add`.
+[workspace.dependencies]
+margin-core = { path = "crates/margin-core" }
+margin-vcs = { path = "crates/margin-vcs" }
+margin-tui = { path = "crates/margin-tui" }
+
+# TUI (ADR 0002)
+ratatui = "0.29"
+crossterm = "0.28"
+
+# VCS (ADR 0005)
+git2 = { version = "0.20", default-features = false }
+
+# Diff + highlighting (ADR 0006)
+similar = { version = "2", features = ["unicode"] }
+syntect = { version = "5", default-features = false, features = ["default-fancy"] }
+
+# CLI + config (ADR 0007, 0008)
+clap = { version = "4", features = ["derive", "wrap_help"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# Errors (ADR 0009)
+thiserror = "2"
+anyhow = "1"
+
+# Test/dev (ADR 0010)
+insta = "1"
+tempfile = "3"
+criterion = "0.5"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# ADR 0009: library crates must not panic on untrusted input.
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

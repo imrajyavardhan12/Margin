@@ -1,0 +1,19 @@
+[package]
+name = "margin-vcs"
+description = "DiffSource trait and implementations (git2, two-file, stdin patch) producing margin-core changesets."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+margin-core.workspace = true
+# git2.workspace = true      # enabled by issue #3
+# thiserror.workspace = true # enabled by issue #3
+
+[dev-dependencies]
+# tempfile.workspace = true  # temp-repo integration tests, issue #3
+
+[lints]
+workspace = true

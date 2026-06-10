@@ -1,0 +1,46 @@
+name: Bug report
+description: Something rendered wrong, crashed, or misbehaved
+labels: ["type:bug", "needs-triage"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Margin version
+      description: Output of `margin --version`
+      placeholder: margin 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, terminal emulator, multiplexer if any
+      placeholder: macOS 15 / Ghostty / tmux 3.5
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Exact command and, if at all possible, the diff that triggers it.
+        For rendering/parsing bugs, attaching the patch
+        (`git diff > repro.patch`, scrubbed of anything private) lets us turn
+        your bug directly into a permanent regression test in `tests/corpus/`.
+      placeholder: |
+        1. `git diff | margin`
+        2. press `J` twice
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, `--dump-config` output, panic message…

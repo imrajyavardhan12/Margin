@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & ideas
+    url: https://github.com/imrajyavardhan12/Margin/discussions
+    about: Usage questions and open-ended ideas go to Discussions — issues are for actionable bugs and scoped features.
+  - name: Security reports
+    url: https://github.com/imrajyavardhan12/Margin/security/advisories/new
+    about: Please report vulnerabilities privately (see SECURITY.md).

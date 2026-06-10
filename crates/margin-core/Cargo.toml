@@ -1,0 +1,17 @@
+[package]
+name = "margin-core"
+description = "Pure diff model, unified-diff parser, and intra-line diffing for Margin. No I/O, no TUI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Kept I/O-free by design (ADR 0003/0004). Allowed deps: data-only crates.
+# similar.workspace = true   # enabled by issue #6
+# serde.workspace = true     # enabled by the --json milestone
+# thiserror.workspace = true # enabled by issue #2
+
+[lints]
+workspace = true

@@ -1,0 +1,74 @@
+//! # margin-vcs
+//!
+//! Every way a changeset can enter Margin, behind one trait.
+//!
+//! ## Contract (ADR 0004, ADR 0005)
+//!
+//! [`DiffSource`] is the *only* seam between Margin and the outside world.
+//! The TUI never talks to git, the filesystem, or stdin directly — it asks a
+//! source for a [`Changeset`] and renders it. Consequences:
+//!
+//! - New inputs (Jujutsu, GitHub PRs, watch mode) are new `DiffSource` impls,
+//!   not new code paths through the app.
+//! - Tests inject synthetic sources; the TUI is testable without a repo.
+//! - git2 stays quarantined in this crate (ADR 0005) so a future migration
+//!   to gitoxide touches one module.
+//!
+//! Implementations (issues #3 and #7): `GitWorktree`, `GitStaged`,
+//! `GitRevRange`, `TwoFiles`, `PatchInput`.
+
+use margin_core::Changeset;
+
+/// Stable identity of a diff across reloads, used to key persisted review
+/// state (viewed files, cursor position).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DiffId(pub String);
+
+/// A producer of changesets. See crate docs for the architectural contract.
+pub trait DiffSource {
+    /// Load (or reload) the changeset. Called on startup and on `r`/watch.
+    fn load(&self) -> Result<Changeset, SourceError>;
+
+    /// Stable identity for persisting review state across runs.
+    fn id(&self) -> DiffId;
+}
+
+/// Errors surfaced to the user as messages, never as panics (ADR 0009).
+#[derive(Debug)]
+pub struct SourceError(pub String);
+
+impl std::fmt::Display for SourceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for SourceError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Empty;
+
+    impl DiffSource for Empty {
+        fn load(&self) -> Result<Changeset, SourceError> {
+            Ok(Changeset::default())
+        }
+
+        fn id(&self) -> DiffId {
+            DiffId("empty".into())
+        }
+    }
+
+    #[test]
+    fn synthetic_source_loads() {
+        let source = Empty;
+        let changeset = match source.load() {
+            Ok(changeset) => changeset,
+            Err(err) => panic!("synthetic source failed: {err}"),
+        };
+        assert_eq!(changeset.files, 0);
+        assert_eq!(source.id(), DiffId("empty".into()));
+    }
+}

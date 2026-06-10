@@ -1,0 +1,26 @@
+[package]
+name = "margin"
+description = "A fast, keyboard-first terminal diff viewer for Git changes, patches, and AI-authored code."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "margin"
+path = "src/main.rs"
+
+[dependencies]
+margin-core.workspace = true
+margin-vcs.workspace = true
+margin-tui.workspace = true
+# clap.workspace = true   # enabled by issue #4
+# anyhow.workspace = true # enabled by issue #4
+# toml.workspace = true   # enabled by issue #8
+# serde.workspace = true  # enabled by issue #8
+
+[lints]
+workspace = true
