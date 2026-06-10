@@ -21,6 +21,9 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace-internal path dependencies carry no version pre-publish;
+# registry wildcards remain denied.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

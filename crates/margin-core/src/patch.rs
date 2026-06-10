@@ -58,6 +58,16 @@ impl<'a> Parser<'a> {
         if input.ends_with(b"\n") {
             lines.pop();
         }
+        // Transport tolerance: when *every* line ends with `\r`, the whole
+        // patch went through CRLF conversion (Windows checkout, mail
+        // gateway); strip the artifact to recover the original bytes. Mixed
+        // endings mean the `\r`s are genuine file content — git emits LF
+        // metadata even when diffing CRLF files — so they are preserved.
+        if !lines.is_empty() && lines.iter().all(|l| l.ends_with(b"\r")) {
+            for line in &mut lines {
+                *line = line.get(..line.len() - 1).unwrap_or(b"");
+            }
+        }
         Self {
             lines,
             pos: 0,
@@ -598,6 +608,22 @@ mod tests {
         assert_eq!(c_unquote(br#"caf\303\251 \"x\"\t"#), b"caf\xc3\xa9 \"x\"\t");
         // Unknown escape kept literally; trailing backslash kept.
         assert_eq!(c_unquote(br"a\qb\"), br"a\qb\");
+    }
+
+    #[test]
+    fn fully_crlf_patch_is_normalized() {
+        let lf: &[u8] = b"--- a.txt\n+++ b.txt\n@@ -1,1 +1,1 @@\n-old\n+new\n";
+        let crlf: Vec<u8> = lf
+            .iter()
+            .flat_map(|&b| {
+                if b == b'\n' {
+                    vec![b'\r', b'\n']
+                } else {
+                    vec![b]
+                }
+            })
+            .collect();
+        assert_eq!(parse_unified(&crlf), parse_unified(lf));
     }
 
     #[test]
