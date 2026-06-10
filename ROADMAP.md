@@ -8,26 +8,26 @@ labels (`M1`, `M2`, …) are the source of truth for what's in flight.
 The MVP must be flawless at *viewing* before Margin earns the right to touch
 your working tree.
 
-- [x] Foundation: workspace, ADRs, CI, governance (issue #1)
-- [x] Changeset model + tolerant unified-diff parser, corpus-tested (#2)
-- [ ] Intra-line word-level diff + parser fuzz target (#2)
-- [ ] Git sources: worktree (incl. untracked), staged, revisions (#3)
-- [ ] TUI: sidebar + unified view + vim navigation + help (#4)
-- [ ] Side-by-side view, responsive auto layout (#5)
-- [ ] Syntax highlighting + word-level intra-line diff, lazy (#6)
-- [ ] stdin patches, two-file mode, safe pager passthrough (#7)
-- [ ] Config + 4 themes + ANSI-16/NO_COLOR fallback (#8)
-- [ ] Search `/` and fuzzy file picker `f` (#9)
-- [ ] Release pipeline: cargo-dist, brew tap, demo GIF (#10)
+- [x] Foundation: workspace, ADRs, CI, governance
+- [x] Changeset model + tolerant unified-diff parser, corpus-tested
+- [ ] Git sources: worktree (incl. untracked), staged, revisions (#1)
+- [ ] TUI: sidebar + unified view + vim navigation + help (#2)
+- [ ] Side-by-side view, responsive auto layout (#3)
+- [ ] Syntax highlighting + word-level intra-line diff, lazy (#4)
+- [ ] stdin patches, two-file mode, safe pager passthrough (#5)
+- [ ] Config + 4 themes + ANSI-16/NO_COLOR fallback (#6)
+- [ ] Search `/` and fuzzy file picker `f` (#7)
+- [ ] Parser fuzz target + weekly fuzz CI (#8)
+- [ ] Release pipeline: cargo-dist, brew tap, demo GIF (#9)
 
 Quality bars (release blockers): < 50 ms first paint on a 100-file diff;
 smooth scrolling on 250k lines; passthrough byte-identity; zero fuzz panics.
 
 ## v0.2 — Act on the diff (`M2`) — the launch release
 
-- [ ] Stage / unstage hunks (`s` / `u`)
-- [ ] Discard hunk with typed confirmation + undo patch in `.git/margin/trash/`
-- [ ] Watch mode (`-w`): auto-reload on change, cursor preserved
+- [ ] Stage / unstage hunks (`s` / `u`) (#10)
+- [ ] Discard hunk with typed confirmation + undo patch in `.git/margin/trash/` (#11)
+- [ ] Watch mode (`-w`): auto-reload on change, cursor preserved (#12)
 - [ ] Persistent viewed-state per `(repo, diff-id)`
 
 ## v0.3 — Review workflows
