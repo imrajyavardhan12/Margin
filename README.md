@@ -28,13 +28,25 @@ blinking.
 
 ## Install
 
-*(Available from v0.1.0 — see [ROADMAP.md](ROADMAP.md))*
+Pre-release binaries (macOS, Linux incl. static musl, Windows) ship from
+[GitHub Releases](https://github.com/imrajyavardhan12/Margin/releases):
 
 ```bash
-brew install imrajyavardhan12/tap/margin     # macOS / Linux
-cargo binstall margin             # or: cargo install margin
+# installer script (macOS / Linux)
 curl -fsSL https://github.com/imrajyavardhan12/Margin/releases/latest/download/margin-installer.sh | sh
+
+# or build from source
+cargo install --git https://github.com/imrajyavardhan12/Margin margin
 ```
+
+Windows (PowerShell):
+
+```powershell
+irm https://github.com/imrajyavardhan12/Margin/releases/latest/download/margin-installer.ps1 | iex
+```
+
+`brew install` and `cargo install margin` (crates.io) land with v0.1.0 — see
+[ROADMAP.md](ROADMAP.md).
 
 ## Quick start
 

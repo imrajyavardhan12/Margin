@@ -5,6 +5,12 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.1] - 2026-06-11
+
+First installable pre-release: the read-only viewer core. Expect rough
+edges; syntax highlighting (#4), stdin/pager modes (#5), themes (#6), and
+search (#7) are still in flight on the road to v0.1.0.
+
 ### Added
 
 - Project foundation: four-crate workspace, ADRs 0001–0012, CI, governance

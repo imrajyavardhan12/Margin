@@ -19,7 +19,9 @@ your working tree.
 - [ ] Config + 4 themes + ANSI-16/NO_COLOR fallback (#6)
 - [ ] Search `/` and fuzzy file picker `f` (#7)
 - [ ] Parser fuzz target + weekly fuzz CI (#8)
-- [ ] Release pipeline: cargo-dist, brew tap, demo GIF (#9)
+- [x] Release pipeline: cargo-dist with 6-target binaries + installers
+      (`v0.1.0-alpha.1` ships pre-releases; brew tap, crates.io, and the
+      demo GIF complete with #9 at v0.1.0)
 
 Quality bars (release blockers): < 50 ms first paint on a 100-file diff;
 smooth scrolling on 250k lines; passthrough byte-identity; zero fuzz panics.

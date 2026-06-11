@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "margin"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "margin-core",
  "margin-tui",
@@ -539,11 +539,11 @@ dependencies = [
 
 [[package]]
 name = "margin-core"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 
 [[package]]
 name = "margin-tui"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "crossterm",
  "insta",
@@ -554,7 +554,7 @@ dependencies = [
 
 [[package]]
 name = "margin-vcs"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "git2",
  "margin-core",
