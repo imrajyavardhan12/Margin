@@ -24,3 +24,7 @@ release notes are hand-curated on top in GitHub Releases.
   overlay, responsive sidebar, control-character sanitization, and a panic
   guard that always restores the terminal. The binary launches the TUI on a
   terminal and prints a plain summary when piped.
+- Side-by-side layout: deletions and additions paired on aligned rows with
+  per-side line numbers, unicode-width-aware fitting, and a width-based
+  `auto` mode (split at 120+ columns); `v` pins unified or split, and the
+  cursor keeps its place when layouts switch.

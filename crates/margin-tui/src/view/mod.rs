@@ -5,6 +5,7 @@
 mod diff;
 mod help;
 mod sidebar;
+mod split;
 
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::Line as TLine;
@@ -19,15 +20,17 @@ pub fn view(state: &AppState, frame: &mut Frame) {
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
 
     // Responsive: the sidebar only earns its space on wide terminals.
-    let show_sidebar = state.sidebar_visible && content.width >= 60;
-    if show_sidebar {
-        let side_width = u16::min(32, content.width / 3);
-        let [side, main] =
-            Layout::horizontal([Constraint::Length(side_width), Constraint::Min(0)]).areas(content);
-        sidebar::render(state, frame, side);
-        diff::render(state, frame, main);
-    } else {
-        diff::render(state, frame, content);
+    // Geometry comes from AppState::panes() so update() and view() can
+    // never disagree about the main pane width.
+    match state.panes().sidebar {
+        Some(side_width) => {
+            let [side, main] =
+                Layout::horizontal([Constraint::Length(side_width), Constraint::Min(0)])
+                    .areas(content);
+            sidebar::render(state, frame, side);
+            diff::render(state, frame, main);
+        }
+        None => diff::render(state, frame, content),
     }
 
     render_status(state, frame, status);
@@ -46,11 +49,12 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
                 .get(idx)
                 .map(|f| f.display_path().into_owned())
                 .unwrap_or_default();
-            format!(" {path}  {}/{}", state.cursor + 1, state.rows.len())
+            let layout = if state.split_active { "  [split]" } else { "" };
+            format!(" {path}  {}/{}{layout}", state.cursor + 1, state.rows.len())
         }
         None => " no changes".to_string(),
     };
-    let hints = "j/k move  J/K hunk  ]/[ file  b sidebar  ? help  q quit ";
+    let hints = "j/k move  J/K hunk  ]/[ file  v layout  b sidebar  ? help  q quit ";
 
     // Pad so the hints sit right-aligned when they fit; when they don't,
     // ratatui clips at the pane edge — no manual truncation, which would

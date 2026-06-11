@@ -29,6 +29,7 @@ margin-tui = { path = "crates/margin-tui", version = "0.0.1" }
 # TUI (ADR 0002)
 ratatui = "0.29"
 crossterm = "0.28"
+unicode-width = "0.2" # split-pane fitting; same version ratatui uses
 
 # VCS (ADR 0005). No network transports; vendored libgit2 keeps builds
 # hermetic for contributors and musl release targets.

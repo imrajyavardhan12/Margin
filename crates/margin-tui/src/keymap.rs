@@ -23,6 +23,7 @@ pub fn msg_for_key(key: KeyEvent) -> Option<Msg> {
         KeyCode::Home => Some(Msg::GKey), // two Homes == gg; fine
         KeyCode::PageDown => Some(Msg::HalfPageDown),
         KeyCode::PageUp => Some(Msg::HalfPageUp),
+        KeyCode::Char('v') => Some(Msg::ToggleLayout),
         KeyCode::Char('b') => Some(Msg::ToggleSidebar),
         KeyCode::Char('?') => Some(Msg::ToggleHelp),
         KeyCode::Esc => Some(Msg::Escape),

@@ -25,4 +25,4 @@ expression: "render(&mut state, 80, 24)"
 
 
 
- no changes             j/k move  J/K hunk  ]/[ file  b sidebar  ? help  q quit
+ no changes   j/k move  J/K hunk  ]/[ file  v layout  b sidebar  ? help  q quit

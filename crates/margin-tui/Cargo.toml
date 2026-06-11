@@ -11,6 +11,7 @@ repository.workspace = true
 margin-core.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+unicode-width.workspace = true
 # syntect.workspace = true   # enabled by issue #4
 
 [dev-dependencies]

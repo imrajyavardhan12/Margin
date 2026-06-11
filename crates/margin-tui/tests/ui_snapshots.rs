@@ -127,6 +127,31 @@ fn sidebar_toggled_off() {
 }
 
 #[test]
+fn split_auto_at_160_cols() {
+    let mut state = sample_state();
+    let frame = render(&mut state, 160, 30);
+    assert!(frame.contains("[split]"), "auto layout must pick split");
+    assert_snapshot!(frame);
+}
+
+#[test]
+fn forced_split_at_80_cols_via_v() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::ToggleLayout);
+    assert_snapshot!(render(&mut state, 80, 24));
+}
+
+#[test]
+fn forced_split_at_40x10_does_not_panic() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(40, 10));
+    update(&mut state, Msg::ToggleLayout);
+    let frame = render(&mut state, 40, 10);
+    assert!(!frame.is_empty());
+}
+
+#[test]
 fn empty_changeset() {
     let mut state = AppState::new(margin_core::Changeset::default());
     assert_snapshot!(render(&mut state, 80, 24));

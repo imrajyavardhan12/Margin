@@ -549,6 +549,7 @@ dependencies = [
  "insta",
  "margin-core",
  "ratatui",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]

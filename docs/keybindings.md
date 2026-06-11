@@ -18,9 +18,14 @@ a deprecation cycle, and custom keymaps are planned post-v0.3.
 
 | Key | Action |
 |---|---|
+| `v` | switch unified / side-by-side (pins your choice over the width-based auto layout) |
 | `b` | toggle the file sidebar |
 | `?` | toggle help |
 | `Esc` | close help |
+
+The layout defaults to `auto`: side-by-side when the diff pane is at least
+120 columns wide, unified below that. The status bar shows `[split]` when
+side-by-side is active.
 
 ## Session
 
@@ -32,8 +37,7 @@ a deprecation cycle, and custom keymaps are planned post-v0.3.
 
 | Key | Planned action | Issue |
 |---|---|---|
-| `v` | unified / side-by-side toggle | #3 |
-| `w` | toggle wrap | #3 |
+| `w` | toggle wrap | #14 |
 | `/`, `n`, `N` | search | #7 |
 | `f` | fuzzy file picker | #7 |
 | `m` | mark file viewed | M2 |

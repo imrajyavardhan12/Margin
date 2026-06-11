@@ -13,4 +13,4 @@ expression: "render(&mut state, 80, 12)"
                                  └ binary file: contents not shown
                            R old/path.txt → new/path.txt  +0 -0
                           ▌      └ renamed without content changes
- new/path.txt  23/23    j/k move  J/K hunk  ]/[ file  b sidebar  ? help  q quit
+ new/path.txt  23/23

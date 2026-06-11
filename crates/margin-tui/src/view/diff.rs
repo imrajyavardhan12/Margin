@@ -38,6 +38,12 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
                 old_no,
                 new_no,
             } => diff_line(state, file, hunk, line, old_no, new_no, marker),
+            Row::Split {
+                file,
+                hunk,
+                left,
+                right,
+            } => split_line(state, file, hunk, left, right, marker, area.width),
         };
         if idx == state.cursor {
             line = line.style(state.theme.cursor_line);
@@ -165,4 +171,72 @@ fn diff_line(
         Span::styled(numbers, state.theme.line_no),
         Span::styled(format!("{sign}{content}"), style),
     ])
+}
+
+/// One side-by-side visual row: `marker │ old half │ divider │ new half`,
+/// composed as a single full-width line so the cursor bar spans both panes.
+fn split_line(
+    state: &AppState,
+    file: usize,
+    hunk: usize,
+    left: Option<(usize, u32)>,
+    right: Option<(usize, u32)>,
+    marker: &str,
+    width: u16,
+) -> TLine<'static> {
+    let usable = usize::from(width).saturating_sub(2); // marker + divider
+    let left_width = usable / 2;
+    let right_width = usable - left_width;
+    let mut spans = vec![Span::raw(marker.to_string())];
+    spans.extend(half_spans(state, file, hunk, left, left_width));
+    spans.push(Span::styled("\u{2502}".to_string(), state.theme.line_no));
+    spans.extend(half_spans(state, file, hunk, right, right_width));
+    TLine::from(spans)
+}
+
+/// Render one half of a split row: line number gutter + sign + content,
+/// fitted to exactly `half_width` columns. A `None` side renders blank.
+fn half_spans(
+    state: &AppState,
+    file: usize,
+    hunk: usize,
+    side: Option<(usize, u32)>,
+    half_width: usize,
+) -> Vec<Span<'static>> {
+    let (number_width, content_width) = super::split::half_budget(half_width);
+    let resolved = side.and_then(|(line, no)| {
+        state
+            .changeset
+            .files
+            .get(file)
+            .and_then(|f| f.hunks.get(hunk))
+            .and_then(|h| h.lines.get(line))
+            .map(|l| (l, no))
+    });
+    let Some((l, no)) = resolved else {
+        return vec![Span::raw(" ".repeat(half_width))];
+    };
+
+    let (sign, style) = match l.kind {
+        LineKind::Addition => ("+", state.theme.addition),
+        LineKind::Deletion => ("-", state.theme.deletion),
+        LineKind::Context => (" ", state.theme.context),
+    };
+    let mut content = printable(&l.content);
+    if l.no_newline {
+        content.push_str(" \u{2205}");
+    }
+    vec![
+        Span::styled(
+            format!("{:>width$} ", no, width = number_width),
+            state.theme.line_no,
+        ),
+        Span::styled(
+            format!(
+                "{sign}{}",
+                super::split::fit_to_width(&content, content_width)
+            ),
+            style,
+        ),
+    ]
 }
