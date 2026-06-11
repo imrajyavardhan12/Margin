@@ -17,8 +17,9 @@
 //!   ratatui's `TestBackend` + insta at fixed terminal sizes.
 //! - Keybindings map to `Msg` in one table (`keymap`), so user-customizable
 //!   keymaps later are a data change, not a refactor.
-//! - The only effectful module is [`runtime`]: terminal setup/teardown, the
-//!   event loop, and the panic guard that restores the terminal (ADR-0009).
+//! - The only effectful module is `runtime` (private): terminal
+//!   setup/teardown, the event loop, and the panic guard that restores the
+//!   terminal (ADR-0009).
 //!
 //! Coming next: side-by-side layout (issue #3), lazy syntax highlighting and
 //! intra-line emphasis (issue #4), themes from config (issue #6), search and

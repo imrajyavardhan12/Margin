@@ -3,6 +3,12 @@
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+    # paste is an unmaintained proc-macro pulled in by ratatui 0.29.
+    # Compile-time only, no runtime exposure; remove this entry when
+    # ratatui drops it (tracked upstream).
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 version = 2
