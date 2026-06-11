@@ -9,12 +9,12 @@ repository.workspace = true
 
 [dependencies]
 margin-core.workspace = true
-# ratatui.workspace = true   # enabled by issue #4
-# crossterm.workspace = true # enabled by issue #4
-# syntect.workspace = true   # enabled by issue #6
+ratatui.workspace = true
+crossterm.workspace = true
+# syntect.workspace = true   # enabled by issue #4
 
 [dev-dependencies]
-# insta.workspace = true     # frame snapshots, issue #4
+insta.workspace = true
 
 [lints]
 workspace = true

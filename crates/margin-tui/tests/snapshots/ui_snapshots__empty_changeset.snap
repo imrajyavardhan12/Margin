@@ -1,0 +1,28 @@
+---
+source: crates/margin-tui/tests/ui_snapshots.rs
+expression: "render(&mut state, 80, 24)"
+---
+ FILES (0)
+
+                             no changes
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ no changes             j/k move  J/K hunk  ]/[ file  b sidebar  ? help  q quit

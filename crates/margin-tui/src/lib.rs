@@ -1,15 +1,15 @@
 //! # margin-tui
 //!
-//! Rendering and interaction, structured as the Elm architecture (ADR 0003):
+//! Rendering and interaction, structured as the Elm architecture (ADR-0003):
 //!
 //! ```text
-//! AppState  — the single source of truth (cursor, layout, search, ...)
+//! AppState  — the single source of truth (cursor, layout, help, ...)
 //! Msg       — every possible interaction, one enum
-//! update()  — pure-ish: (AppState, Msg) -> AppState (+ commands)
-//! view()    — pure: &AppState -> ratatui Frame
+//! update()  — the only place state changes
+//! view()    — pure: &AppState -> frame; no side effects, snapshot-testable
 //! ```
 //!
-//! ## Contract (ADR 0003, ADR 0004, ADR 0010)
+//! ## Contract (ADR-0003, ADR-0004, ADR-0010)
 //!
 //! - Depends on `margin-core` only — never on `margin-vcs`. Changesets are
 //!   handed in; this crate does not know where they came from.
@@ -17,28 +17,19 @@
 //!   ratatui's `TestBackend` + insta at fixed terminal sizes.
 //! - Keybindings map to `Msg` in one table (`keymap`), so user-customizable
 //!   keymaps later are a data change, not a refactor.
-//! - Syntax highlighting is lazy (highlight on first visibility) and never
-//!   blocks the input loop — a performance budget enforced in CI (issue #6).
+//! - The only effectful module is [`runtime`]: terminal setup/teardown, the
+//!   event loop, and the panic guard that restores the terminal (ADR-0009).
 //!
-//! Modules land with issue #4: `app`, `keymap`, `theme`, `view::{sidebar,
-//! unified, side_by_side, help, picker, search}`, `highlight`.
+//! Coming next: side-by-side layout (issue #3), lazy syntax highlighting and
+//! intra-line emphasis (issue #4), themes from config (issue #6), search and
+//! the fuzzy file picker (issue #7).
 
-use margin_core::Changeset;
+pub mod app;
+pub mod keymap;
+mod runtime;
+pub mod theme;
+pub mod view;
 
-/// Placeholder app state so the workspace compiles before issue #4.
-#[derive(Debug, Default)]
-pub struct AppState {
-    /// The changeset under review.
-    pub changeset: Changeset,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn appstate_constructs() {
-        let state = AppState::default();
-        assert!(state.changeset.is_empty());
-    }
-}
+pub use app::{update, AppState, Msg};
+pub use runtime::run;
+pub use view::view as render_view;

@@ -18,3 +18,9 @@ release notes are hand-curated on top in GitHub Releases.
   ranges — with rename/copy detection, typed errors, and temp-repo
   integration tests. The binary prints a changeset summary as a walking
   skeleton until the TUI lands.
+- `margin-tui`: the interactive review UI — file sidebar with statuses and
+  counts, unified diff pane with dual line numbers and hunk headings,
+  vim-grammar navigation (`j/k`, `J/K`, `]/[`, `gg/G`, `Ctrl-d/u`), help
+  overlay, responsive sidebar, control-character sanitization, and a panic
+  guard that always restores the terminal. The binary launches the TUI on a
+  terminal and prints a plain summary when piped.

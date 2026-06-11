@@ -1,0 +1,28 @@
+---
+source: crates/margin-tui/tests/ui_snapshots.rs
+expression: "render(&mut state, 80, 24)"
+---
+ FILES (4)                ▌M src/app.rs  +4 -2
+▌M src/app.rs        +4 -2 @@ -1,5 +1,6 @@ fn setup()
+ A docs/NOTES.md     +2 -0    1    1  use std::env;
+ M assets/logo.png   +0 -0    2    2
+ R new/path.txt      +0 -0    3      -fn setup() {
+                              4      -    init("defaults");
+                  ┌ margin — keys ───────────────────────────┐
+                  │                                          │ar("PROFILE");
+                  │  j / k            move down / up         │f().unwrap_or("def
+                  │  J / K            next / previous hunk   │
+                  │  ] / [            next / previous file   │
+                  │  gg / G           top / bottom           │
+                  │  Ctrl-d / Ctrl-u  half page down / up    │
+                  │  b                toggle sidebar         │
+                  │  ?                toggle this help       │
+                  │  q                quit                   │
+                  │                                          │
+                  └──────────────────────────────────────────┘
+                                   2 +remember the milk
+                           M assets/logo.png  +0 -0  (binary)
+                                 └ binary file: contents not shown
+                           R old/path.txt → new/path.txt  +0 -0
+                                 └ renamed without content changes
+ src/app.rs  1/23       j/k move  J/K hunk  ]/[ file  b sidebar  ? help  q quit

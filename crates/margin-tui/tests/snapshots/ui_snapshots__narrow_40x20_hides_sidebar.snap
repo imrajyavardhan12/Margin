@@ -1,0 +1,24 @@
+---
+source: crates/margin-tui/tests/ui_snapshots.rs
+expression: frame
+---
+▌M src/app.rs  +4 -2
+ @@ -1,5 +1,6 @@ fn setup()
+    1    1  use std::env;
+    2    2
+    3      -fn setup() {
+    4      -    init("defaults");
+         3 +fn setup() {
+         4 +    let profile = env::var("
+         5 +    init(profile.as_deref().
+    5    6  }
+ @@ -20,3 +21,4 @@
+   20   21  fn teardown() {
+   21   22      cleanup();
+   22   23  }
+        24 +// reviewed
+ A docs/NOTES.md  +2 -0
+ @@ -0,0 +1,2 @@
+         1 +# Notes
+         2 +remember the milk
+ src/app.rs  1/23

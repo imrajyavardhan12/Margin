@@ -1,0 +1,54 @@
+---
+source: crates/margin-tui/tests/ui_snapshots.rs
+expression: "render(&mut state, 200, 50)"
+---
+ FILES (4)                      ▌M src/app.rs  +4 -2
+▌M src/app.rs              +4 -2 @@ -1,5 +1,6 @@ fn setup()
+ A docs/NOTES.md           +2 -0    1    1  use std::env;
+ M assets/logo.png         +0 -0    2    2
+ R new/path.txt            +0 -0    3      -fn setup() {
+                                    4      -    init("defaults");
+                                         3 +fn setup() {
+                                         4 +    let profile = env::var("PROFILE");
+                                         5 +    init(profile.as_deref().unwrap_or("defaults"));
+                                    5    6  }
+                                 @@ -20,3 +21,4 @@
+                                   20   21  fn teardown() {
+                                   21   22      cleanup();
+                                   22   23  }
+                                        24 +// reviewed
+                                 A docs/NOTES.md  +2 -0
+                                 @@ -0,0 +1,2 @@
+                                         1 +# Notes
+                                         2 +remember the milk
+                                 M assets/logo.png  +0 -0  (binary)
+                                       └ binary file: contents not shown
+                                 R old/path.txt → new/path.txt  +0 -0
+                                       └ renamed without content changes
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ src/app.rs  1/23                                                                                                                               j/k move  J/K hunk  ]/[ file  b sidebar  ? help  q quit

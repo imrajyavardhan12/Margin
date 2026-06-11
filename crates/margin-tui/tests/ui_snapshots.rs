@@ -1,0 +1,133 @@
+//! Frame snapshot tests (ADR-0010 layer 2): render a known changeset at
+//! fixed terminal sizes via ratatui's TestBackend and snapshot the text.
+//! Keybinding flows are Msg sequences followed by a snapshot — the snapshot
+//! diff in a PR *is* the UI review.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use insta::assert_snapshot;
+use margin_core::parse_unified;
+use margin_tui::{render_view, update, AppState, Msg};
+use ratatui::backend::TestBackend;
+use ratatui::buffer::Buffer;
+use ratatui::Terminal;
+
+/// A changeset with one of everything: a modified file with two hunks and a
+/// heading, an added file, a binary file, and a pure rename.
+const SAMPLE: &str = "\
+diff --git a/src/app.rs b/src/app.rs
+index 1111111..2222222 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -1,5 +1,6 @@ fn setup()
+ use std::env;
+
+-fn setup() {
+-    init(\"defaults\");
++fn setup() {
++    let profile = env::var(\"PROFILE\");
++    init(profile.as_deref().unwrap_or(\"defaults\"));
+ }
+@@ -20,3 +21,4 @@
+ fn teardown() {
+     cleanup();
+ }
++// reviewed
+diff --git a/docs/NOTES.md b/docs/NOTES.md
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/docs/NOTES.md
+@@ -0,0 +1,2 @@
++# Notes
++remember the milk
+diff --git a/assets/logo.png b/assets/logo.png
+index 4444444..5555555 100644
+Binary files a/assets/logo.png and b/assets/logo.png differ
+diff --git a/old/path.txt b/new/path.txt
+similarity index 100%
+rename from old/path.txt
+rename to new/path.txt
+";
+
+fn sample_state() -> AppState {
+    let outcome = parse_unified(SAMPLE.as_bytes());
+    assert!(outcome.warnings.is_empty(), "sample must parse cleanly");
+    AppState::new(outcome.changeset)
+}
+
+fn render(state: &mut AppState, width: u16, height: u16) -> String {
+    update(state, Msg::Resize(width, height));
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal.draw(|frame| render_view(state, frame)).unwrap();
+    buffer_text(terminal.backend().buffer())
+}
+
+fn buffer_text(buffer: &Buffer) -> String {
+    let area = buffer.area();
+    (0..area.height)
+        .map(|y| {
+            let line: String = (0..area.width).map(|x| buffer[(x, y)].symbol()).collect();
+            line.trim_end().to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn standard_80x24() {
+    let mut state = sample_state();
+    assert_snapshot!(render(&mut state, 80, 24));
+}
+
+#[test]
+fn wide_200x50() {
+    let mut state = sample_state();
+    assert_snapshot!(render(&mut state, 200, 50));
+}
+
+#[test]
+fn narrow_40x20_hides_sidebar() {
+    let mut state = sample_state();
+    let frame = render(&mut state, 40, 20);
+    assert!(!frame.contains("FILES"), "sidebar must yield at 40 cols");
+    assert_snapshot!(frame);
+}
+
+#[test]
+fn navigation_flow_lands_on_second_file() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    for msg in [Msg::NextHunk, Msg::NextHunk, Msg::NextFile] {
+        update(&mut state, msg);
+    }
+    assert_snapshot!(render(&mut state, 80, 24));
+}
+
+#[test]
+fn cursor_scrolls_into_view_at_bottom() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 12));
+    update(&mut state, Msg::Bottom);
+    assert_snapshot!(render(&mut state, 80, 12));
+}
+
+#[test]
+fn help_overlay() {
+    let mut state = sample_state();
+    update(&mut state, Msg::ToggleHelp);
+    assert_snapshot!(render(&mut state, 80, 24));
+}
+
+#[test]
+fn sidebar_toggled_off() {
+    let mut state = sample_state();
+    update(&mut state, Msg::ToggleSidebar);
+    assert_snapshot!(render(&mut state, 80, 24));
+}
+
+#[test]
+fn empty_changeset() {
+    let mut state = AppState::new(margin_core::Changeset::default());
+    assert_snapshot!(render(&mut state, 80, 24));
+}
