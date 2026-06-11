@@ -81,13 +81,28 @@ impl Default for FileDiff {
 impl FileDiff {
     /// The path to show in a file list: the new path, falling back to the old
     /// one (deleted files), converted lossily for display.
+    ///
+    /// Control characters are replaced with U+FFFD so the result is always
+    /// safe to print to a terminal: filenames may contain raw escape bytes
+    /// (the patch parser legitimately decodes `\033` in quoted paths), and a
+    /// crafted path must never be able to emit escape sequences through any
+    /// render site (see SECURITY.md).
     pub fn display_path(&self) -> Cow<'_, str> {
         let path = self
             .new_path
             .as_deref()
             .or(self.old_path.as_deref())
             .unwrap_or(b"<unknown>");
-        String::from_utf8_lossy(path)
+        let text = String::from_utf8_lossy(path);
+        if text.chars().any(char::is_control) {
+            Cow::Owned(
+                text.chars()
+                    .map(|c| if c.is_control() { '\u{fffd}' } else { c })
+                    .collect(),
+            )
+        } else {
+            text
+        }
     }
 
     pub fn additions(&self) -> usize {
@@ -170,6 +185,19 @@ mod tests {
             ..FileDiff::default()
         };
         assert_eq!(deleted.display_path(), "gone.rs");
+    }
+
+    #[test]
+    fn display_path_neutralizes_escape_sequences() {
+        // A path like this can come straight from a quoted patch header
+        // (`"\033]0;pwned\007.rs"`); it must never reach the terminal raw.
+        let hostile = FileDiff {
+            new_path: Some(b"\x1b]0;pwned\x07.rs".to_vec()),
+            ..FileDiff::default()
+        };
+        let shown = hostile.display_path();
+        assert!(!shown.chars().any(char::is_control), "{shown:?}");
+        assert_eq!(shown, "\u{fffd}]0;pwned\u{fffd}.rs");
     }
 
     #[test]

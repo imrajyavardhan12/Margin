@@ -131,3 +131,27 @@ fn empty_changeset() {
     let mut state = AppState::new(margin_core::Changeset::default());
     assert_snapshot!(render(&mut state, 80, 24));
 }
+
+/// A crafted filename (the parser decodes `\033` octal escapes in quoted
+/// paths) must never put a control character into the rendered frame —
+/// not via the sidebar, the file header, or the status bar (SECURITY.md).
+#[test]
+fn hostile_path_never_reaches_the_frame_raw() {
+    let patch = "diff --git \"a/\\033]0;pwned\\007.rs\" \"b/\\033]0;pwned\\007.rs\"\n\
+                 index 1111111..2222222 100644\n\
+                 --- \"a/\\033]0;pwned\\007.rs\"\n\
+                 +++ \"b/\\033]0;pwned\\007.rs\"\n\
+                 @@ -1,1 +1,1 @@\n\
+                 -safe\n\
+                 +also safe\n";
+    let mut state = AppState::new(parse_unified(patch.as_bytes()).changeset);
+    let frame = render(&mut state, 80, 24);
+    assert!(
+        !frame.chars().any(|c| c.is_control() && c != '\n'),
+        "control characters leaked into the frame"
+    );
+    assert!(
+        frame.contains("pwned"),
+        "the path itself should still render"
+    );
+}

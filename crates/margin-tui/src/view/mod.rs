@@ -52,13 +52,15 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
     };
     let hints = "j/k move  J/K hunk  ]/[ file  b sidebar  ? help  q quit ";
 
+    // Pad so the hints sit right-aligned when they fit; when they don't,
+    // ratatui clips at the pane edge — no manual truncation, which would
+    // panic on a multi-byte character boundary.
     let width = usize::from(area.width);
+    let left_cols = left.chars().count();
     let mut line = left;
-    if width > line.len() + hints.len() {
-        line.push_str(&" ".repeat(width - line.len() - hints.len()));
+    if width > left_cols + hints.len() {
+        line.push_str(&" ".repeat(width - left_cols - hints.len()));
         line.push_str(hints);
-    } else {
-        line.truncate(width);
     }
     frame.render_widget(
         Paragraph::new(TLine::from(line)).style(state.theme.status_bar),
