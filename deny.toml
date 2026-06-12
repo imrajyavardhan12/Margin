@@ -8,6 +8,13 @@ ignore = [
     # Compile-time only, no runtime exposure; remove this entry when
     # ratatui drops it (tracked upstream).
     "RUSTSEC-2024-0436",
+    # syntect 5 loads its bundled syntax/theme dumps with bincode 1
+    # (unmaintained) and parses .sublime-syntax via yaml-rust
+    # (unmaintained). Both operate on syntect's own embedded assets, not
+    # untrusted input; every syntect consumer (bat, delta) carries these.
+    # Drop when syntect migrates off them.
+    "RUSTSEC-2025-0141", # bincode 1.x
+    "RUSTSEC-2024-0320", # yaml-rust
 ]
 
 [licenses]
