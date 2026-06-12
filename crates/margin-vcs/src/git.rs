@@ -12,12 +12,15 @@ use margin_core::{Changeset, FileDiff, FileStatus, Hunk, Line, LineKind};
 
 use crate::{DiffId, DiffSource, SourceError};
 
-/// Working tree (and index) vs HEAD — what `margin` shows by default.
-/// Untracked files are included as additions: agents create new files
-/// constantly and `git diff` silently hiding them is a footgun.
+/// Working tree (and index) vs a base revision (HEAD by default) — what
+/// `margin` and `margin diff <rev>` show. Untracked files are included as
+/// additions: agents create new files constantly and `git diff` silently
+/// hiding them is a footgun.
 pub struct GitWorktree {
     pub repo_path: PathBuf,
     pub include_untracked: bool,
+    /// Revision to diff against; `None` means HEAD.
+    pub base: Option<String>,
 }
 
 impl GitWorktree {
@@ -25,6 +28,7 @@ impl GitWorktree {
         Self {
             repo_path: repo_path.into(),
             include_untracked: true,
+            base: None,
         }
     }
 }
@@ -32,20 +36,24 @@ impl GitWorktree {
 impl DiffSource for GitWorktree {
     fn load(&self) -> Result<Changeset, SourceError> {
         let repo = open_repo(&self.repo_path)?;
-        let head = head_tree(&repo)?;
+        let base = match &self.base {
+            Some(spec) => Some(resolve_tree(&repo, spec)?),
+            None => head_tree(&repo)?,
+        };
         let mut opts = base_options();
         if self.include_untracked {
             opts.include_untracked(true)
                 .recurse_untracked_dirs(true)
                 .show_untracked_content(true);
         }
-        let mut diff = repo.diff_tree_to_workdir_with_index(head.as_ref(), Some(&mut opts))?;
+        let mut diff = repo.diff_tree_to_workdir_with_index(base.as_ref(), Some(&mut opts))?;
         detect_renames(&mut diff)?;
         convert(&diff)
     }
 
     fn id(&self) -> DiffId {
-        DiffId(format!("{}#worktree", self.repo_path.display()))
+        let base = self.base.as_deref().unwrap_or("HEAD");
+        DiffId(format!("{}#worktree:{base}", self.repo_path.display()))
     }
 }
 
@@ -198,75 +206,91 @@ fn detect_renames(diff: &mut Diff<'_>) -> Result<(), SourceError> {
     Ok(())
 }
 
+/// Map a git2 delta status; `None` means "not part of the changeset".
+pub(crate) fn map_status(delta: Delta) -> Option<FileStatus> {
+    match delta {
+        Delta::Unmodified | Delta::Ignored => None,
+        Delta::Added | Delta::Untracked => Some(FileStatus::Added),
+        Delta::Deleted => Some(FileStatus::Deleted),
+        Delta::Renamed => Some(FileStatus::Renamed),
+        Delta::Copied => Some(FileStatus::Copied),
+        Delta::Modified | Delta::Typechange | Delta::Conflicted | Delta::Unreadable => {
+            Some(FileStatus::Modified)
+        }
+    }
+}
+
+/// Build a FileDiff skeleton (paths, modes, binary flag) from a delta.
+pub(crate) fn file_from_delta(delta: &git2::DiffDelta<'_>, status: FileStatus) -> FileDiff {
+    let mut file = FileDiff {
+        status,
+        is_binary: delta.flags().is_binary(),
+        ..FileDiff::default()
+    };
+    if status != FileStatus::Added {
+        file.old_path = delta.old_file().path_bytes().map(<[u8]>::to_vec);
+        file.old_mode = file_mode(delta.old_file().mode());
+    }
+    if status != FileStatus::Deleted {
+        file.new_path = delta.new_file().path_bytes().map(<[u8]>::to_vec);
+        file.new_mode = file_mode(delta.new_file().mode());
+    }
+    file
+}
+
+/// Convert one git2 patch's hunks into the margin-core model.
+pub(crate) fn convert_hunks(patch: &git2::Patch<'_>) -> Result<Vec<Hunk>, SourceError> {
+    let mut hunks = Vec::with_capacity(patch.num_hunks());
+    for h in 0..patch.num_hunks() {
+        let (header, line_count) = patch.hunk(h)?;
+        let mut hunk = Hunk {
+            old_start: header.old_start(),
+            old_count: header.old_lines(),
+            new_start: header.new_start(),
+            new_count: header.new_lines(),
+            heading: heading_from_header(header.header()),
+            lines: Vec::with_capacity(line_count),
+        };
+        for l in 0..line_count {
+            let line = patch.line_in_hunk(h, l)?;
+            let kind = match line.origin_value() {
+                DiffLineType::Context => LineKind::Context,
+                DiffLineType::Addition => LineKind::Addition,
+                DiffLineType::Deletion => LineKind::Deletion,
+                DiffLineType::ContextEOFNL | DiffLineType::AddEOFNL | DiffLineType::DeleteEOFNL => {
+                    if let Some(last) = hunk.lines.last_mut() {
+                        last.no_newline = true;
+                    }
+                    continue;
+                }
+                // File/hunk header pseudo-lines never occur inside
+                // line_in_hunk, but stay total over the enum.
+                _ => continue,
+            };
+            let content = line.content();
+            let content = content.strip_suffix(b"\n").unwrap_or(content).to_vec();
+            hunk.lines.push(Line {
+                kind,
+                content,
+                no_newline: false,
+            });
+        }
+        hunks.push(hunk);
+    }
+    Ok(hunks)
+}
+
 /// Translate a git2 diff into the margin-core model.
 fn convert(diff: &Diff<'_>) -> Result<Changeset, SourceError> {
     let mut files = Vec::new();
     for (idx, delta) in diff.deltas().enumerate() {
-        let status = match delta.status() {
-            Delta::Unmodified | Delta::Ignored => continue,
-            Delta::Added | Delta::Untracked => FileStatus::Added,
-            Delta::Deleted => FileStatus::Deleted,
-            Delta::Renamed => FileStatus::Renamed,
-            Delta::Copied => FileStatus::Copied,
-            Delta::Modified | Delta::Typechange | Delta::Conflicted | Delta::Unreadable => {
-                FileStatus::Modified
-            }
+        let Some(status) = map_status(delta.status()) else {
+            continue;
         };
-
-        let mut file = FileDiff {
-            status,
-            is_binary: delta.flags().is_binary(),
-            ..FileDiff::default()
-        };
-        if status != FileStatus::Added {
-            file.old_path = delta.old_file().path_bytes().map(<[u8]>::to_vec);
-            file.old_mode = file_mode(delta.old_file().mode());
-        }
-        if status != FileStatus::Deleted {
-            file.new_path = delta.new_file().path_bytes().map(<[u8]>::to_vec);
-            file.new_mode = file_mode(delta.new_file().mode());
-        }
-
+        let mut file = file_from_delta(&delta, status);
         if let Some(patch) = git2::Patch::from_diff(diff, idx)? {
             file.is_binary = patch.delta().flags().is_binary() || file.is_binary;
-            for h in 0..patch.num_hunks() {
-                let (header, line_count) = patch.hunk(h)?;
-                let mut hunk = Hunk {
-                    old_start: header.old_start(),
-                    old_count: header.old_lines(),
-                    new_start: header.new_start(),
-                    new_count: header.new_lines(),
-                    heading: heading_from_header(header.header()),
-                    lines: Vec::with_capacity(line_count),
-                };
-                for l in 0..line_count {
-                    let line = patch.line_in_hunk(h, l)?;
-                    let kind = match line.origin_value() {
-                        DiffLineType::Context => LineKind::Context,
-                        DiffLineType::Addition => LineKind::Addition,
-                        DiffLineType::Deletion => LineKind::Deletion,
-                        DiffLineType::ContextEOFNL
-                        | DiffLineType::AddEOFNL
-                        | DiffLineType::DeleteEOFNL => {
-                            if let Some(last) = hunk.lines.last_mut() {
-                                last.no_newline = true;
-                            }
-                            continue;
-                        }
-                        // File/hunk header pseudo-lines never occur inside
-                        // line_in_hunk, but stay total over the enum.
-                        _ => continue,
-                    };
-                    let content = line.content();
-                    let content = content.strip_suffix(b"\n").unwrap_or(content).to_vec();
-                    hunk.lines.push(Line {
-                        kind,
-                        content,
-                        no_newline: false,
-                    });
-                }
-                file.hunks.push(hunk);
-            }
+            file.hunks = convert_hunks(&patch)?;
         }
         files.push(file);
     }

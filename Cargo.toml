@@ -40,7 +40,7 @@ similar = { version = "2", features = ["unicode"] }
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 
 # CLI + config (ADR 0007, 0008)
-clap = { version = "4", features = ["derive", "wrap_help"] }
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 

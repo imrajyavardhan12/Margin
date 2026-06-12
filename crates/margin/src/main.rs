@@ -1,57 +1,202 @@
-//! The `margin` binary: CLI parsing, config discovery, source selection,
-//! and the terminal session.
+//! The `margin` binary: CLI parsing, source selection, and the terminal
+//! session.
 //!
 //! Responsibilities (and nothing more — ADR-0004):
-//! 1. Parse CLI args (full clap surface arrives with issue #5) and config
-//!    (ADR-0007, ADR-0008).
-//! 2. Choose a `margin_vcs::DiffSource` from the invocation.
-//! 3. Run the TUI when stdout is a terminal; print a plain summary when it
-//!    is not (precursor of the pager passthrough guarantee, ADR-0007).
+//! 1. Parse the git-verb CLI (ADR-0007) and, later, config (ADR-0008).
+//! 2. Choose a `margin_vcs::DiffSource` (or read stdin/file bytes) from the
+//!    invocation.
+//! 3. Honor the passthrough guarantee: in `pager` and `patch` modes with a
+//!    non-TTY stdout, input bytes flow through byte-identical, exit 0.
+//! 4. Run the TUI on a terminal; print a plain summary when piped.
 //!
-//! Exit codes per ADR-0007: 0 success, 2 usage/environment error.
+//! Exit codes are an API (ADR-0007): 0 success, 2 usage/environment error.
+//! (1 is reserved for "displayed with errors".)
 
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use margin_core::{Changeset, FileStatus};
+use clap::{Args, Parser, Subcommand};
+use margin_core::{parse_unified, Changeset, FileStatus, ParseWarning};
 use margin_tui::AppState;
-use margin_vcs::{DiffSource, GitStaged, GitWorktree};
+use margin_vcs::{DiffSource, GitRevRange, GitShow, GitStaged, GitWorktree, TwoFiles};
+
+#[derive(Parser)]
+#[command(
+    name = "margin",
+    version,
+    about = "A fast, keyboard-first terminal diff viewer",
+    long_about = "Review Git changes, patches, and AI-authored code without leaving the terminal.\n\
+                  Run with no arguments to review the working tree (untracked files included)."
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    /// Review staged changes (shorthand for `margin diff --staged`)
+    #[arg(long)]
+    staged: bool,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Review working-tree changes, a revision (range), or two files
+    Diff(DiffArgs),
+    /// Review one commit against its first parent
+    Show {
+        /// Revision to show (defaults to HEAD)
+        rev: Option<String>,
+    },
+    /// Review a unified diff from stdin (`-`) or a patch file
+    Patch {
+        /// `-` for stdin (the default) or a path to a .patch/.diff file
+        input: Option<String>,
+    },
+    /// Git pager mode: interactive on a terminal, byte-identical
+    /// passthrough when piped (safe as `git config core.pager`)
+    Pager,
+}
+
+#[derive(Args)]
+struct DiffArgs {
+    /// Review the index (staged changes) instead of the working tree
+    #[arg(long)]
+    staged: bool,
+
+    /// A revision (`HEAD~2`), a range (`main..feature`), or two files
+    #[arg(value_name = "REV|RANGE|FILE", num_args = 0..=2)]
+    targets: Vec<String>,
+}
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("margin {}", env!("CARGO_PKG_VERSION"));
+    let cli = Cli::parse();
+    let command = cli.command.unwrap_or(Command::Diff(DiffArgs {
+        staged: cli.staged,
+        targets: Vec::new(),
+    }));
+
+    match command {
+        Command::Diff(args) => run_diff(args),
+        Command::Show { rev } => {
+            let cwd = match working_dir() {
+                Ok(dir) => dir,
+                Err(code) => return code,
+            };
+            run_source(&GitShow::new(cwd, rev.unwrap_or_else(|| "HEAD".into())))
+        }
+        Command::Patch { input } => run_patch(input.as_deref().unwrap_or("-")),
+        Command::Pager => run_patch("-"),
+    }
+}
+
+fn run_diff(args: DiffArgs) -> ExitCode {
+    let cwd = match working_dir() {
+        Ok(dir) => dir,
+        Err(code) => return code,
+    };
+    if args.staged && !args.targets.is_empty() {
+        eprintln!("margin: --staged cannot be combined with revisions or files");
+        return ExitCode::from(2);
+    }
+    if args.staged {
+        return run_source(&GitStaged::new(cwd));
+    }
+
+    match args.targets.as_slice() {
+        [] => run_source(&GitWorktree::new(cwd)),
+        [single] => {
+            if let Some((from, to)) = split_range(single) {
+                run_source(&GitRevRange::new(cwd, from, to))
+            } else {
+                // `margin diff <rev>`: working tree vs that revision —
+                // git's semantics.
+                let mut source = GitWorktree::new(cwd);
+                source.base = Some(single.clone());
+                run_source(&source)
+            }
+        }
+        [a, b] => {
+            if Path::new(a).is_file() && Path::new(b).is_file() {
+                run_source(&TwoFiles::new(a, b))
+            } else {
+                run_source(&GitRevRange::new(cwd, a.clone(), b.clone()))
+            }
+        }
+        _ => unreachable!("clap caps targets at 2"),
+    }
+}
+
+/// `A..B` / `A...B` -> (A, B); empty sides default to HEAD, like git.
+fn split_range(spec: &str) -> Option<(String, String)> {
+    let (from, to) = spec.split_once("...").or_else(|| spec.split_once(".."))?;
+    let or_head = |s: &str| {
+        if s.is_empty() {
+            "HEAD".to_string()
+        } else {
+            s.to_string()
+        }
+    };
+    Some((or_head(from), or_head(to)))
+}
+
+/// `patch`/`pager` mode: raw bytes in; passthrough when piped, TUI when not.
+fn run_patch(input: &str) -> ExitCode {
+    let bytes = if input == "-" {
+        let mut buf = Vec::new();
+        if let Err(err) = std::io::stdin().lock().read_to_end(&mut buf) {
+            eprintln!("margin: cannot read stdin: {err}");
+            return ExitCode::from(2);
+        }
+        buf
+    } else {
+        match std::fs::read(input) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                eprintln!("margin: cannot read {input}: {err}");
+                return ExitCode::from(2);
+            }
+        }
+    };
+
+    // The passthrough guarantee (ADR-0007): piped output is byte-identical
+    // to the input — `git -c core.pager='margin pager' log -p | grep` must
+    // behave exactly as without us.
+    if !std::io::stdout().is_terminal() {
+        let mut stdout = std::io::stdout().lock();
+        if stdout
+            .write_all(&bytes)
+            .and_then(|()| stdout.flush())
+            .is_err()
+        {
+            // Downstream closed the pipe (e.g. `| head`): not an error.
+            return ExitCode::SUCCESS;
+        }
         return ExitCode::SUCCESS;
     }
-    let staged = args.iter().any(|a| a == "--staged");
 
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(err) => {
-            eprintln!("margin: cannot determine working directory: {err}");
-            return ExitCode::from(2);
-        }
-    };
+    // Git colorizes output destined for a pager; strip ANSI for parsing.
+    let outcome = parse_unified(&margin_core::strip_ansi(&bytes));
+    let code = show(outcome.changeset);
+    report_warnings(&outcome.warnings);
+    code
+}
 
-    let source: Box<dyn DiffSource> = if staged {
-        Box::new(GitStaged::new(&cwd))
-    } else {
-        Box::new(GitWorktree::new(&cwd))
-    };
-
-    let changeset = match source.load() {
-        Ok(changeset) => changeset,
+fn run_source(source: &dyn DiffSource) -> ExitCode {
+    match source.load() {
+        Ok(changeset) => show(changeset),
         Err(err) => {
             eprintln!("margin: {err}");
-            return ExitCode::from(2);
+            ExitCode::from(2)
         }
-    };
+    }
+}
 
+/// Render a changeset: TUI on a terminal, plain summary when piped.
+fn show(changeset: Changeset) -> ExitCode {
     if !std::io::stdout().is_terminal() {
         print_summary(&changeset);
         return ExitCode::SUCCESS;
     }
-
     let mut state = AppState::new(changeset);
     match margin_tui::run(&mut state) {
         Ok(()) => ExitCode::SUCCESS,
@@ -60,6 +205,24 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// Surface parse anomalies after the TUI closes (never swallowed, ADR-0009).
+fn report_warnings(warnings: &[ParseWarning]) {
+    const SHOWN: usize = 5;
+    for warning in warnings.iter().take(SHOWN) {
+        eprintln!("margin: patch line {}: {}", warning.line, warning.message);
+    }
+    if warnings.len() > SHOWN {
+        eprintln!("margin: ...and {} more warnings", warnings.len() - SHOWN);
+    }
+}
+
+fn working_dir() -> Result<PathBuf, ExitCode> {
+    std::env::current_dir().map_err(|err| {
+        eprintln!("margin: cannot determine working directory: {err}");
+        ExitCode::from(2)
+    })
 }
 
 /// Plain listing for non-TTY stdout (pipes, scripts).

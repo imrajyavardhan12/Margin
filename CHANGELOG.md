@@ -5,6 +5,19 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+### Added
+
+- The full git-verb CLI (clap): `margin diff [--staged] [<rev>|A..B|fileA fileB]`,
+  `margin show [rev]`, `margin patch [-|file]`, and `margin pager`.
+  `margin diff <rev>` diffs the working tree against that revision.
+- The pager passthrough guarantee: `pager`/`patch` modes with piped stdout
+  write input through byte-identical and exit 0 — safe to set as
+  `git config core.pager` permanently (integration-tested against colored
+  `git log -p`, invalid UTF-8, and missing trailing newlines).
+- ANSI stripping in margin-core: git colorizes output sent to pagers;
+  Margin parses it cleanly and still passes raw bytes through untouched.
+- Two-file diffs without a repository (git2 buffer diffing, binary-aware).
+
 ## [0.1.0-alpha.2] - 2026-06-12
 
 ### Added

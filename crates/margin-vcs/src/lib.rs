@@ -18,8 +18,10 @@
 //! Implemented: [`GitWorktree`], [`GitStaged`], [`GitShow`], [`GitRevRange`].
 //! Coming with issue #5: `TwoFiles`, `PatchInput`.
 
+mod files;
 mod git;
 
+pub use files::TwoFiles;
 pub use git::{GitRevRange, GitShow, GitStaged, GitWorktree};
 
 use margin_core::Changeset;
@@ -49,6 +51,9 @@ pub enum SourceError {
 
     #[error("cannot resolve revision '{spec}': {reason}")]
     BadRevspec { spec: String, reason: String },
+
+    #[error("cannot read {}: {message}", path.display())]
+    Io { path: PathBuf, message: String },
 
     #[error("git: {0}")]
     Git(String),

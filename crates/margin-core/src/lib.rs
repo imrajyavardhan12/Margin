@@ -24,10 +24,12 @@
 //!         └── Line     // context / addition / deletion (+ intra-line spans, later)
 //! ```
 
+pub mod ansi;
 pub mod intraline;
 pub mod model;
 pub mod patch;
 
+pub use ansi::strip_ansi;
 pub use intraline::{intraline_ranges, paired_changes};
 pub use model::{ByteStr, Changeset, FileDiff, FileStatus, Hunk, Line, LineKind};
 pub use patch::{parse_unified, ParseOutcome, ParseWarning};
