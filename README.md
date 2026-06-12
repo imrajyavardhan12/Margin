@@ -35,7 +35,7 @@ Pre-release binaries (macOS, Linux incl. static musl, Windows) ship from
 
 ```bash
 # installer script (macOS / Linux)
-curl -fsSL https://github.com/imrajyavardhan12/Margin/releases/download/v0.1.0-alpha.1/margin-installer.sh | sh
+curl -fsSL https://github.com/imrajyavardhan12/Margin/releases/download/v0.1.0-alpha.2/margin-installer.sh | sh
 
 # or build from source
 cargo install --git https://github.com/imrajyavardhan12/Margin margin
@@ -44,7 +44,7 @@ cargo install --git https://github.com/imrajyavardhan12/Margin margin
 Windows (PowerShell):
 
 ```powershell
-irm https://github.com/imrajyavardhan12/Margin/releases/download/v0.1.0-alpha.1/margin-installer.ps1 | iex
+irm https://github.com/imrajyavardhan12/Margin/releases/download/v0.1.0-alpha.2/margin-installer.ps1 | iex
 ```
 
 (Pre-releases are not served by GitHub's `releases/latest` URL; these links

@@ -5,6 +5,8 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-06-12
+
 ### Added
 
 - Syntax highlighting (syntect, ~200 languages by extension) layered under
