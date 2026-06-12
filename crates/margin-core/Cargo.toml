@@ -9,9 +9,18 @@ repository.workspace = true
 
 [dependencies]
 # Kept I/O-free by design (ADR 0003/0004). Allowed deps: data-only crates.
-# similar.workspace = true   # enabled by issue #6
+similar.workspace = true
 # serde.workspace = true     # enabled by the --json milestone
-# thiserror.workspace = true # enabled by issue #2
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "parse"
+harness = false
 
 [lints]
 workspace = true
+
+[lib]
+bench = false

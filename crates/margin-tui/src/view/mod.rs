@@ -6,6 +6,7 @@ mod diff;
 mod help;
 mod sidebar;
 mod split;
+mod style;
 
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::Line as TLine;
@@ -15,6 +16,10 @@ use ratatui::Frame;
 use crate::app::AppState;
 
 pub fn view(state: &AppState, frame: &mut Frame) {
+    // Open this frame's highlighting work budget (ADR-0006): at most a few
+    // hundred lines are syntax-highlighted per frame; the rest fill in on
+    // subsequent frames via the runtime's pending-work poll.
+    state.highlight.begin_frame();
     let area = frame.area();
     let [content, status] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);

@@ -12,6 +12,7 @@ categories.workspace = true
 [[bin]]
 name = "margin"
 path = "src/main.rs"
+bench = false
 
 [dependencies]
 margin-core.workspace = true

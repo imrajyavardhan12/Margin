@@ -115,6 +115,8 @@ pub struct AppState {
     /// Terminal size; kept current by `Msg::Resize`.
     pub viewport: (u16, u16),
     pub theme: crate::theme::Theme,
+    /// Memoizing, budgeted syntax/emphasis cache (ADR-0006).
+    pub highlight: crate::highlight::HighlightCache,
 }
 
 impl AppState {
@@ -132,6 +134,7 @@ impl AppState {
             should_quit: false,
             viewport: (80, 24),
             theme: crate::theme::Theme::default(),
+            highlight: crate::highlight::HighlightCache::default(),
         };
         state.rows = build_rows(&state.changeset, state.split_active);
         state.refresh_layout();

@@ -12,10 +12,18 @@ margin-core.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 unicode-width.workspace = true
-# syntect.workspace = true   # enabled by issue #4
+syntect.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "first_frame"
+harness = false
 
 [lints]
 workspace = true
+
+[lib]
+bench = false

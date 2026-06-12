@@ -26,6 +26,7 @@
 //! the fuzzy file picker (issue #7).
 
 pub mod app;
+pub mod highlight;
 pub mod keymap;
 mod runtime;
 pub mod theme;

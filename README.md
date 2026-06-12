@@ -16,8 +16,10 @@ blinking.
 
 ## Why margin
 
-- **Instant.** Rust, single binary, < 50 ms to first paint on a 100-file diff.
-  Smooth on 250k-line lockfile monsters.
+- **Instant.** Rust, single binary. First paint in ~4 ms on a 100-file/10k-line
+  diff and ~15 ms on a 250k-line lockfile monster (measured, release build,
+  criterion — budgets enforced in CI). Syntax highlighting is budgeted per
+  frame, so no diff can ever freeze the UI.
 - **Keyboard-first.** Vim-grammar navigation, `/` search across the whole
   changeset, fuzzy file jump, mark-as-viewed. Review without touching the mouse.
 - **Acts on the diff** *(v0.2)*. Stage, unstage, or discard hunk-by-hunk from

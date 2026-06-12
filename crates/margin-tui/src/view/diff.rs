@@ -2,6 +2,7 @@
 
 use margin_core::{FileDiff, FileStatus, LineKind};
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::text::{Line as TLine, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -131,6 +132,32 @@ fn hunk_header(state: &AppState, file: usize, hunk: usize, marker: &str) -> TLin
     TLine::styled(text, state.theme.hunk_header)
 }
 
+/// Sign char, base style, and emphasis patch for a line kind. The base is
+/// the flat fg color in plain mode and a bg tint under syntax colors.
+fn line_styles(state: &AppState, kind: LineKind, has_syntax: bool) -> (&'static str, Style, Style) {
+    match kind {
+        LineKind::Addition => (
+            "+",
+            if has_syntax {
+                state.theme.addition_tint
+            } else {
+                state.theme.addition
+            },
+            state.theme.addition_emphasis,
+        ),
+        LineKind::Deletion => (
+            "-",
+            if has_syntax {
+                state.theme.deletion_tint
+            } else {
+                state.theme.deletion
+            },
+            state.theme.deletion_emphasis,
+        ),
+        LineKind::Context => (" ", state.theme.context, Style::default()),
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // private helper mirroring Row::Line's payload
 fn diff_line(
     state: &AppState,
@@ -141,36 +168,46 @@ fn diff_line(
     new_no: Option<u32>,
     marker: &str,
 ) -> TLine<'static> {
-    let Some(l) = state
+    let Some((file_diff, h)) = state
         .changeset
         .files
         .get(file)
-        .and_then(|f| f.hunks.get(hunk))
-        .and_then(|h| h.lines.get(line))
+        .and_then(|f| f.hunks.get(hunk).map(|h| (f, h)))
     else {
         return TLine::from(marker.to_string());
     };
-
-    let (sign, style) = match l.kind {
-        LineKind::Addition => ("+", state.theme.addition),
-        LineKind::Deletion => ("-", state.theme.deletion),
-        LineKind::Context => (" ", state.theme.context),
+    let Some(l) = h.lines.get(line) else {
+        return TLine::from(marker.to_string());
     };
+
+    let render = state
+        .highlight
+        .line_render(file, hunk, &file_diff.display_path(), h, line);
+    let (sign, base, emphasis_patch) = line_styles(state, l.kind, render.syntax.is_some());
+
     let numbers = format!(
         "{:>4} {:>4} ",
         old_no.map(|n| n.to_string()).unwrap_or_default(),
         new_no.map(|n| n.to_string()).unwrap_or_default(),
     );
-    let mut content = printable(&l.content);
-    if l.no_newline {
-        content.push_str(" \u{2205}"); // mark missing trailing newline
-    }
+    let content = printable(&l.content);
 
-    TLine::from(vec![
+    let mut spans = vec![
         Span::raw(marker.to_string()),
         Span::styled(numbers, state.theme.line_no),
-        Span::styled(format!("{sign}{content}"), style),
-    ])
+        Span::styled(sign.to_string(), base),
+    ];
+    spans.extend(super::style::compose_content(
+        &content,
+        render.syntax,
+        &render.emphasis,
+        base,
+        emphasis_patch,
+    ));
+    if l.no_newline {
+        spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
+    }
+    TLine::from(spans)
 }
 
 /// One side-by-side visual row: `marker │ old half │ divider │ new half`,
@@ -209,34 +246,37 @@ fn half_spans(
             .changeset
             .files
             .get(file)
-            .and_then(|f| f.hunks.get(hunk))
-            .and_then(|h| h.lines.get(line))
-            .map(|l| (l, no))
+            .and_then(|f| f.hunks.get(hunk).map(|h| (f, h)))
+            .and_then(|(f, h)| h.lines.get(line).map(|l| (f, h, l, line, no)))
     });
-    let Some((l, no)) = resolved else {
+    let Some((file_diff, h, l, line_idx, no)) = resolved else {
         return vec![Span::raw(" ".repeat(half_width))];
     };
 
-    let (sign, style) = match l.kind {
-        LineKind::Addition => ("+", state.theme.addition),
-        LineKind::Deletion => ("-", state.theme.deletion),
-        LineKind::Context => (" ", state.theme.context),
-    };
-    let mut content = printable(&l.content);
+    let render = state
+        .highlight
+        .line_render(file, hunk, &file_diff.display_path(), h, line_idx);
+    let (sign, style, emphasis_patch) = line_styles(state, l.kind, render.syntax.is_some());
+    let content = printable(&l.content);
+
+    let mut content_spans = super::style::compose_content(
+        &content,
+        render.syntax,
+        &render.emphasis,
+        style,
+        emphasis_patch,
+    );
     if l.no_newline {
-        content.push_str(" \u{2205}");
+        content_spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
     }
-    vec![
+
+    let mut spans = vec![
         Span::styled(
             format!("{:>width$} ", no, width = number_width),
             state.theme.line_no,
         ),
-        Span::styled(
-            format!(
-                "{sign}{}",
-                super::split::fit_to_width(&content, content_width)
-            ),
-            style,
-        ),
-    ]
+        Span::styled(sign.to_string(), style),
+    ];
+    spans.extend(super::split::fit_spans(content_spans, content_width));
+    spans
 }

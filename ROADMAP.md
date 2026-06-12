@@ -14,7 +14,7 @@ your working tree.
 - [x] TUI: sidebar + unified view + vim navigation + help (#2)
 - [x] Side-by-side view, responsive auto layout (#3)
 - [ ] Wrap long lines (`w`) (#14)
-- [ ] Syntax highlighting + word-level intra-line diff, lazy (#4)
+- [x] Syntax highlighting + word-level intra-line diff, lazy + budgeted (#4)
 - [ ] stdin patches, two-file mode, safe pager passthrough (#5)
 - [ ] Config + 4 themes + ANSI-16/NO_COLOR fallback (#6)
 - [ ] Search `/` and fuzzy file picker `f` (#7)

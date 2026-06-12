@@ -5,6 +5,19 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+### Added
+
+- Syntax highlighting (syntect, ~200 languages by extension) layered under
+  addition/deletion background tints, plus word-level intra-line emphasis
+  (`similar`) on paired changed lines — with a rewrite heuristic that keeps
+  emphasis off mostly-changed lines.
+- Lazy, budgeted rendering: at most a few hundred lines are highlighted per
+  frame app-wide; oversized hunks fill in across frames while the input
+  loop stays responsive. Measured first paint (release): ~4 ms on a
+  100-file/10k-line diff, ~15 ms on a 250k-line single-hunk file.
+- Criterion benchmarks for parsing and frame times, wired into CI as an
+  informational job on main.
+
 ## [0.1.0-alpha.1] - 2026-06-11
 
 First installable pre-release: the read-only viewer core. Expect rough

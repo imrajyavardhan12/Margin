@@ -8,6 +8,12 @@ pub struct Theme {
     pub addition: Style,
     pub deletion: Style,
     pub context: Style,
+    /// Background tints behind syntax-colored added/removed content.
+    pub addition_tint: Style,
+    pub deletion_tint: Style,
+    /// Stronger backgrounds for the intra-line changed words.
+    pub addition_emphasis: Style,
+    pub deletion_emphasis: Style,
     pub line_no: Style,
     pub file_header: Style,
     pub hunk_header: Style,
@@ -25,6 +31,10 @@ impl Default for Theme {
             addition: Style::default().fg(Color::Green),
             deletion: Style::default().fg(Color::Red),
             context: Style::default(),
+            addition_tint: Style::default().bg(Color::Rgb(0x0d, 0x33, 0x18)),
+            deletion_tint: Style::default().bg(Color::Rgb(0x3d, 0x15, 0x17)),
+            addition_emphasis: Style::default().bg(Color::Rgb(0x1c, 0x6b, 0x35)),
+            deletion_emphasis: Style::default().bg(Color::Rgb(0x8b, 0x2d, 0x30)),
             line_no: Style::default().fg(Color::DarkGray),
             file_header: Style::default()
                 .fg(Color::White)

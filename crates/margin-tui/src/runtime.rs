@@ -40,15 +40,27 @@ fn event_loop(
         if state.should_quit {
             return Ok(());
         }
-        match crossterm::event::read()? {
+        // While highlighting work is pending (budget ran out mid-frame),
+        // poll with a short timeout so fill-in frames happen without input;
+        // otherwise block on read at zero CPU.
+        let event = if state.highlight.has_pending() {
+            if crossterm::event::poll(std::time::Duration::from_millis(25))? {
+                Some(crossterm::event::read()?)
+            } else {
+                None // timeout: redraw to let the cache make progress
+            }
+        } else {
+            Some(crossterm::event::read()?)
+        };
+        match event {
             // Windows terminals also deliver Release/Repeat events;
             // acting on those would double every keystroke.
-            Event::Key(key) if key.kind == KeyEventKind::Press => {
+            Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                 if let Some(msg) = msg_for_key(key) {
                     update(state, msg);
                 }
             }
-            Event::Resize(width, height) => update(state, Msg::Resize(width, height)),
+            Some(Event::Resize(width, height)) => update(state, Msg::Resize(width, height)),
             _ => {}
         }
     }
