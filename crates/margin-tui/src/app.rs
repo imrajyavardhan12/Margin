@@ -141,6 +141,19 @@ impl AppState {
         state
     }
 
+    /// Swap the visual theme, rebuilding the highlight cache so syntax
+    /// colors come from the new theme (or disappear in degraded modes).
+    pub fn apply_theme(&mut self, theme: crate::theme::Theme) {
+        self.highlight = crate::highlight::HighlightCache::new(theme.syntax_theme);
+        self.theme = theme;
+    }
+
+    /// Set the layout preference (from config/CLI) and re-resolve rows.
+    pub fn set_layout_mode(&mut self, mode: LayoutMode) {
+        self.layout_mode = mode;
+        self.refresh_layout();
+    }
+
     /// Pane geometry at the current viewport.
     pub fn panes(&self) -> Panes {
         let (width, _) = self.viewport;

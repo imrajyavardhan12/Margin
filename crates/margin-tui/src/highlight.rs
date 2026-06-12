@@ -45,16 +45,9 @@ fn syntax_set() -> &'static SyntaxSet {
     SET.get_or_init(SyntaxSet::load_defaults_nonewlines)
 }
 
-fn syntect_theme() -> &'static Theme {
-    static THEME: OnceLock<Theme> = OnceLock::new();
-    THEME.get_or_init(|| {
-        let mut themes = ThemeSet::load_defaults().themes;
-        // Until issue #6 brings configurable themes, one tasteful default.
-        themes
-            .remove("base16-ocean.dark")
-            .or_else(|| themes.into_values().next())
-            .unwrap_or_default()
-    })
+fn theme_set() -> &'static ThemeSet {
+    static THEMES: OnceLock<ThemeSet> = OnceLock::new();
+    THEMES.get_or_init(ThemeSet::load_defaults)
 }
 
 /// What the view needs to render one diff line.
@@ -68,6 +61,9 @@ pub struct LineRender {
 }
 
 pub struct HighlightCache {
+    /// syntect theme for code coloring; `None` disables syntax entirely
+    /// (16-color/monochrome modes — RGB output would be garbage there).
+    syn_theme: Option<&'static Theme>,
     state: RefCell<CacheState>,
 }
 
@@ -91,13 +87,19 @@ struct HunkCache {
 
 impl Default for HighlightCache {
     fn default() -> Self {
-        Self {
-            state: RefCell::new(CacheState::default()),
-        }
+        Self::new(crate::theme::Theme::default().syntax_theme)
     }
 }
 
 impl HighlightCache {
+    /// A cache coloring with the named syntect theme; `None` renders plain.
+    pub fn new(syntax_theme: Option<&'static str>) -> Self {
+        Self {
+            syn_theme: syntax_theme.and_then(|name| theme_set().themes.get(name)),
+            state: RefCell::new(CacheState::default()),
+        }
+    }
+
     /// Reset the per-frame work budget. Called once at the top of `view`.
     pub fn begin_frame(&self) {
         let mut state = self.state.borrow_mut();
@@ -131,7 +133,7 @@ impl HighlightCache {
         } = &mut *state;
         let entry = hunks
             .entry((file_idx, hunk_idx))
-            .or_insert_with(|| HunkCache::new(path, hunk));
+            .or_insert_with(|| HunkCache::new(path, hunk, self.syn_theme.is_some()));
 
         // Emphasis: computed per pair on first request, both sides at once.
         if !entry.emphasis.contains_key(&line) {
@@ -150,8 +152,10 @@ impl HighlightCache {
         }
 
         // Syntax: advance the stateful parser toward this line within budget.
-        if entry.syntax.is_some() && entry.advance_to(line, hunk, budget) {
-            *pending = true;
+        if let Some(theme) = self.syn_theme {
+            if entry.syntax.is_some() && entry.advance_to(line, hunk, budget, theme) {
+                *pending = true;
+            }
         }
 
         LineRender {
@@ -162,8 +166,8 @@ impl HighlightCache {
 }
 
 impl HunkCache {
-    fn new(path: &str, hunk: &Hunk) -> Self {
-        let syntax = if hunk.lines.len() > MAX_HUNK_LINES {
+    fn new(path: &str, hunk: &Hunk, syntax_enabled: bool) -> Self {
+        let syntax = if !syntax_enabled || hunk.lines.len() > MAX_HUNK_LINES {
             None
         } else {
             path.rsplit('.')
@@ -187,7 +191,13 @@ impl HunkCache {
 
     /// Highlight lines `next_line..=target` while budget lasts. Returns true
     /// when the budget ran out first.
-    fn advance_to(&mut self, target: usize, hunk: &Hunk, budget: &mut usize) -> bool {
+    fn advance_to(
+        &mut self,
+        target: usize,
+        hunk: &Hunk,
+        budget: &mut usize,
+        theme: &'static Theme,
+    ) -> bool {
         if self.next_line > target {
             return false;
         }
@@ -198,7 +208,7 @@ impl HunkCache {
             self.syntax = None;
             return false;
         };
-        let highlighter = SynHighlighter::new(syntect_theme());
+        let highlighter = SynHighlighter::new(theme);
         if self.parse.is_none() {
             self.parse = Some((
                 ParseState::new(syntax),

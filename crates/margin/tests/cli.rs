@@ -130,6 +130,107 @@ fn colored_patch_from_file_parses_for_summary() {
 }
 
 #[test]
+fn dump_config_reflects_files_and_flags() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = dir.path().join("config.toml");
+    std::fs::write(&user, "theme = \"carbon\"\nlayout = \"split\"\n").unwrap();
+    let repo = dir.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::write(repo.join(".margin.toml"), "theme = \"blueprint\"\n").unwrap();
+
+    // Repo config overrides the user file for display options.
+    let out = margin()
+        .current_dir(&repo)
+        .env("MARGIN_CONFIG", &user)
+        .arg("--dump-config")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let dump = String::from_utf8_lossy(&out.stdout);
+    assert!(dump.contains("theme = \"blueprint\""), "{dump}");
+    assert!(dump.contains("layout = \"split\""), "{dump}");
+
+    // Flags beat both files.
+    let out = margin()
+        .current_dir(&repo)
+        .env("MARGIN_CONFIG", &user)
+        .args([
+            "--theme",
+            "foolscap",
+            "--layout",
+            "unified",
+            "--dump-config",
+        ])
+        .output()
+        .unwrap();
+    let dump = String::from_utf8_lossy(&out.stdout);
+    assert!(dump.contains("theme = \"foolscap\""), "{dump}");
+    assert!(dump.contains("layout = \"unified\""), "{dump}");
+}
+
+#[test]
+fn config_typos_error_with_suggestions() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = dir.path().join("config.toml");
+    std::fs::write(&user, "them = \"carbon\"\n").unwrap();
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &user)
+        .arg("--dump-config")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("them") && stderr.contains("theme"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn repo_config_cannot_set_behavior_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    std::fs::write(
+        dir.path().join(".margin.toml"),
+        "include_untracked = false\n",
+    )
+    .unwrap();
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", dir.path().join("none.toml"))
+        .arg("--dump-config")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "ADR-0008 trust rule");
+}
+
+#[test]
+fn unknown_theme_exits_2_listing_builtins() {
+    let patch = b"--- a\n+++ b\n@@ -1,1 +1,1 @@\n-x\n+y\n";
+    let dir = tempfile::tempdir().unwrap();
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", dir.path().join("none.toml"))
+        .args(["--theme", "nope", "patch", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map(|mut child| {
+            child.stdin.take().unwrap().write_all(patch).unwrap();
+            child.wait_with_output().unwrap()
+        })
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unknown theme") && stderr.contains("ledger"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn version_flag_works() {
     let out = margin().arg("--version").output().unwrap();
     assert_eq!(out.status.code(), Some(0));

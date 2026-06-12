@@ -19,8 +19,8 @@ margin-core.workspace = true
 margin-vcs.workspace = true
 margin-tui.workspace = true
 clap.workspace = true
-# toml.workspace = true   # enabled by issue #6
-# serde.workspace = true  # enabled by issue #6
+serde.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

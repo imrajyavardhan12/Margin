@@ -100,14 +100,19 @@ difftastic; for whole-repo management, gitui/lazygit are excellent.
 ## Configuration
 
 `~/.config/margin/config.toml` (user) and `.margin.toml` (repo, display
-options only). Everything has a CLI flag too. See
-[docs/configuration.md](docs/configuration.md).
+options only — a checked-out repo can never change Margin's behavior).
+Everything has a CLI flag too; `margin --dump-config` shows the merged
+result. See [docs/configuration.md](docs/configuration.md) and
+[docs/themes.md](docs/themes.md).
 
 ```toml
-theme = "ledger"        # ledger, foolscap, carbon, blueprint — or custom
-layout = "auto"         # auto, unified, split
-collapse = ["*.lock", "dist/**"]
+theme = "ledger"           # ledger, foolscap, carbon, blueprint
+layout = "auto"            # auto, unified, split
+include_untracked = true
 ```
+
+`NO_COLOR` and 16-color terminals are handled with dedicated degraded
+palettes, not broken RGB.
 
 ## Contributing
 

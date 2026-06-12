@@ -7,6 +7,15 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- Configuration (ADR-0008): user `config.toml` (XDG paths, `$MARGIN_CONFIG`
+  override), repo-local `.margin.toml` restricted by schema to display
+  options, `--theme`/`--layout` flags, and `margin --dump-config`. Unknown
+  keys error with did-you-mean suggestions.
+- Four built-in themes — `ledger` (default dark), `foolscap` (light),
+  `carbon` (high contrast), `blueprint` (blue dark) — each with a matched
+  syntax palette, plus deliberate degradation: one ANSI-16-safe palette on
+  non-truecolor terminals (syntax off) and a `NO_COLOR` monochrome mode
+  using bold/dim/reverse only.
 - The full git-verb CLI (clap): `margin diff [--staged] [<rev>|A..B|fileA fileB]`,
   `margin show [rev]`, `margin patch [-|file]`, and `margin pager`.
   `margin diff <rev>` diffs the working tree against that revision.

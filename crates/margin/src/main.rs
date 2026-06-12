@@ -12,12 +12,16 @@
 //! Exit codes are an API (ADR-0007): 0 success, 2 usage/environment error.
 //! (1 is reserved for "displayed with errors".)
 
+mod config;
+
 use std::io::{IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
+use config::{Config, LayoutChoice};
 use margin_core::{parse_unified, Changeset, FileStatus, ParseWarning};
+use margin_tui::theme::{Theme, THEME_NAMES};
 use margin_tui::AppState;
 use margin_vcs::{DiffSource, GitRevRange, GitShow, GitStaged, GitWorktree, TwoFiles};
 
@@ -36,6 +40,18 @@ struct Cli {
     /// Review staged changes (shorthand for `margin diff --staged`)
     #[arg(long)]
     staged: bool,
+
+    /// Theme: ledger, foolscap, carbon, blueprint
+    #[arg(long, global = true, value_name = "NAME")]
+    theme: Option<String>,
+
+    /// Diff layout
+    #[arg(long, global = true, value_enum)]
+    layout: Option<LayoutChoice>,
+
+    /// Print the effective configuration (after merging files and flags)
+    #[arg(long)]
+    dump_config: bool,
 }
 
 #[derive(Subcommand)]
@@ -68,28 +84,66 @@ struct DiffArgs {
     targets: Vec<String>,
 }
 
+/// Everything `show` needs besides the source: the merged config and the
+/// theme resolved against the terminal's color capability.
+struct Session {
+    config: Config,
+    theme: Theme,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    let cwd = working_dir().ok();
+    let config = match Config::load(
+        config::user_config_path().as_deref(),
+        cwd.as_deref(),
+        cli.theme.as_deref(),
+        cli.layout,
+    ) {
+        Ok(config) => config,
+        Err(message) => {
+            eprintln!("margin: config error {message}");
+            return ExitCode::from(2);
+        }
+    };
+    if cli.dump_config {
+        print!("{}", config.dump());
+        return ExitCode::SUCCESS;
+    }
+    let Some(theme) = Theme::resolve(&config.theme, config::detect_color_mode()) else {
+        eprintln!(
+            "margin: unknown theme '{}' (built-in themes: {})",
+            config.theme,
+            THEME_NAMES.join(", ")
+        );
+        return ExitCode::from(2);
+    };
+    let session = Session { config, theme };
+
     let command = cli.command.unwrap_or(Command::Diff(DiffArgs {
         staged: cli.staged,
         targets: Vec::new(),
     }));
 
     match command {
-        Command::Diff(args) => run_diff(args),
+        Command::Diff(args) => run_diff(args, &session),
         Command::Show { rev } => {
             let cwd = match working_dir() {
                 Ok(dir) => dir,
                 Err(code) => return code,
             };
-            run_source(&GitShow::new(cwd, rev.unwrap_or_else(|| "HEAD".into())))
+            run_source(
+                &GitShow::new(cwd, rev.unwrap_or_else(|| "HEAD".into())),
+                &session,
+            )
         }
-        Command::Patch { input } => run_patch(input.as_deref().unwrap_or("-")),
-        Command::Pager => run_patch("-"),
+        Command::Patch { input } => run_patch(input.as_deref().unwrap_or("-"), &session),
+        Command::Pager => run_patch("-", &session),
     }
 }
 
-fn run_diff(args: DiffArgs) -> ExitCode {
+fn run_diff(args: DiffArgs, session: &Session) -> ExitCode {
     let cwd = match working_dir() {
         Ok(dir) => dir,
         Err(code) => return code,
@@ -99,27 +153,32 @@ fn run_diff(args: DiffArgs) -> ExitCode {
         return ExitCode::from(2);
     }
     if args.staged {
-        return run_source(&GitStaged::new(cwd));
+        return run_source(&GitStaged::new(cwd), session);
     }
 
     match args.targets.as_slice() {
-        [] => run_source(&GitWorktree::new(cwd)),
+        [] => {
+            let mut source = GitWorktree::new(cwd);
+            source.include_untracked = session.config.include_untracked;
+            run_source(&source, session)
+        }
         [single] => {
             if let Some((from, to)) = split_range(single) {
-                run_source(&GitRevRange::new(cwd, from, to))
+                run_source(&GitRevRange::new(cwd, from, to), session)
             } else {
                 // `margin diff <rev>`: working tree vs that revision —
                 // git's semantics.
                 let mut source = GitWorktree::new(cwd);
+                source.include_untracked = session.config.include_untracked;
                 source.base = Some(single.clone());
-                run_source(&source)
+                run_source(&source, session)
             }
         }
         [a, b] => {
             if Path::new(a).is_file() && Path::new(b).is_file() {
-                run_source(&TwoFiles::new(a, b))
+                run_source(&TwoFiles::new(a, b), session)
             } else {
-                run_source(&GitRevRange::new(cwd, a.clone(), b.clone()))
+                run_source(&GitRevRange::new(cwd, a.clone(), b.clone()), session)
             }
         }
         _ => unreachable!("clap caps targets at 2"),
@@ -140,7 +199,7 @@ fn split_range(spec: &str) -> Option<(String, String)> {
 }
 
 /// `patch`/`pager` mode: raw bytes in; passthrough when piped, TUI when not.
-fn run_patch(input: &str) -> ExitCode {
+fn run_patch(input: &str, session: &Session) -> ExitCode {
     let bytes = if input == "-" {
         let mut buf = Vec::new();
         if let Err(err) = std::io::stdin().lock().read_to_end(&mut buf) {
@@ -176,14 +235,14 @@ fn run_patch(input: &str) -> ExitCode {
 
     // Git colorizes output destined for a pager; strip ANSI for parsing.
     let outcome = parse_unified(&margin_core::strip_ansi(&bytes));
-    let code = show(outcome.changeset);
+    let code = show(outcome.changeset, session);
     report_warnings(&outcome.warnings);
     code
 }
 
-fn run_source(source: &dyn DiffSource) -> ExitCode {
+fn run_source(source: &dyn DiffSource, session: &Session) -> ExitCode {
     match source.load() {
-        Ok(changeset) => show(changeset),
+        Ok(changeset) => show(changeset, session),
         Err(err) => {
             eprintln!("margin: {err}");
             ExitCode::from(2)
@@ -192,12 +251,14 @@ fn run_source(source: &dyn DiffSource) -> ExitCode {
 }
 
 /// Render a changeset: TUI on a terminal, plain summary when piped.
-fn show(changeset: Changeset) -> ExitCode {
+fn show(changeset: Changeset, session: &Session) -> ExitCode {
     if !std::io::stdout().is_terminal() {
         print_summary(&changeset);
         return ExitCode::SUCCESS;
     }
     let mut state = AppState::new(changeset);
+    state.apply_theme(session.theme.clone());
+    state.set_layout_mode(session.config.layout.into());
     match margin_tui::run(&mut state) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {

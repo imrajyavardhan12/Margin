@@ -17,7 +17,8 @@ your working tree.
 - [x] Syntax highlighting + word-level intra-line diff, lazy + budgeted (#4)
 - [x] Real CLI (`diff`/`show`/`patch`/`pager`), stdin patches, two-file
       mode, byte-identical pager passthrough (#5)
-- [ ] Config + 4 themes + ANSI-16/NO_COLOR fallback (#6)
+- [x] Config + 4 themes + ANSI-16/NO_COLOR fallback + `--dump-config` (#6)
+- [ ] Custom themes from TOML (#15, post-v0.1 candidate)
 - [ ] Search `/` and fuzzy file picker `f` (#7)
 - [ ] Parser fuzz target + weekly fuzz CI (#8)
 - [x] Release pipeline: cargo-dist with 6-target binaries + installers
