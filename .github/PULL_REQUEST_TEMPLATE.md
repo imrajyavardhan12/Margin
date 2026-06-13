@@ -13,4 +13,6 @@
 - [ ] Docs updated if this adds/changes keybindings, config keys, or CLI verbs
       (`docs/keybindings.md`, `docs/configuration.md`, CHANGELOG.md)
 - [ ] No accepted ADR contradicted — or a superseding ADR is included
-- [ ] `cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` is green locally
+- [ ] AGENTS.md updated if this changes commands, architecture, conventions,
+      or taught you a gotcha the next contributor (human or agent) will hit
+- [ ] Green locally, mirroring CI: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps && cargo test --workspace`

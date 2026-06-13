@@ -16,6 +16,9 @@ That's it — no C toolchain gymnastics, no Node, no services.
 
 ## Orientation (10 minutes)
 
+0. Contributing with a coding agent? Point it at [AGENTS.md](AGENTS.md) —
+   the canonical agent briefing (commands, hard rules, testing playbook,
+   gotchas). Claude Code picks it up automatically via CLAUDE.md.
 1. [docs/architecture.md](docs/architecture.md) — the crate map and the rules
    between crates. Read this first.
 2. [docs/adr/](docs/adr/) — why things are the way they are. If your change

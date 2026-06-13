@@ -48,10 +48,24 @@ only what scrolls into view, cached per file, warmed by a background thread
 (< 50 ms first paint on 100 files; smooth 250k-line scrolling) are encoded in
 criterion benches and guarded in CI.
 
-## Where things will live (as issues land)
+## Where things live
 
-- `margin-core`: `model.rs`, `patch.rs`, `intraline.rs`, `collapse.rs` (#2, #6)
-- `margin-vcs`: `source.rs`, `git.rs`, `files.rs`, `patch_input.rs` (#3, #7)
-- `margin-tui`: `app.rs`, `keymap.rs`, `theme.rs`, `highlight.rs`,
-  `view/{sidebar,unified,side_by_side,help,picker,search}.rs` (#4, #5, #6, #8, #9)
-- `margin`: `main.rs`, `config.rs` (#4, #7, #8)
+- `margin-core`: `model.rs` (bytes-first changeset model), `patch.rs`
+  (tolerant unified-diff parser), `intraline.rs` (word-level emphasis),
+  `ansi.rs` (escape stripping for pager input)
+- `margin-vcs`: `lib.rs` (`DiffSource` trait + `SourceError`), `git.rs`
+  (worktree/staged/show/range sources + git2 conversion), `files.rs`
+  (two-file diffs)
+- `margin-tui`: `app.rs` (`AppState`/`Msg`/`update`, per-layout `Row`
+  stream), `keymap.rs`, `theme.rs` (built-ins + color modes),
+  `highlight.rs` (budgeted lazy syntax/emphasis cache), `runtime.rs`
+  (terminal session + panic guard),
+  `view/{mod,diff,sidebar,help,split,style}.rs`
+- `margin`: `main.rs` (clap CLI, passthrough guarantee), `config.rs`
+  (discovery/merge, color-mode detection)
+
+Still to come (issues): `view/{search,picker}` (#7), wrap-aware layout
+(#14), staging in `margin-vcs` behind explicit Msgs (#10–#12, v0.2).
+
+For agent-oriented operational detail (commands, gotchas, testing
+playbook), see [AGENTS.md](../AGENTS.md).
