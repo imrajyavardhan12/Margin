@@ -4,6 +4,7 @@
 
 mod diff;
 mod help;
+mod picker;
 mod sidebar;
 mod split;
 mod style;
@@ -43,9 +44,30 @@ pub fn view(state: &AppState, frame: &mut Frame) {
     if state.help_visible {
         help::render(state, frame, area);
     }
+    if state.picker.is_some() {
+        picker::render(state, frame, area);
+    }
 }
 
 fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
+    // The search bar takes over the status line while typing.
+    if let Some(search) = &state.search {
+        if search.typing {
+            let feedback = match (&search.error, search.matches.len()) {
+                (Some(err), _) => format!("  ({err})"),
+                (None, 0) if !search.query.is_empty() => "  (no matches)".to_string(),
+                (None, n) if n > 0 => format!("  ({n} matching rows)"),
+                _ => String::new(),
+            };
+            let line = format!(" /{}\u{258c}{feedback}", search.query);
+            frame.render_widget(
+                Paragraph::new(TLine::from(line)).style(state.theme.status_bar),
+                area,
+            );
+            return;
+        }
+    }
+
     let left = match state.current_file() {
         Some(idx) => {
             let path = state
@@ -55,11 +77,20 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
                 .map(|f| f.display_path().into_owned())
                 .unwrap_or_default();
             let layout = if state.split_active { "  [split]" } else { "" };
-            format!(" {path}  {}/{}{layout}", state.cursor + 1, state.rows.len())
+            let search = match (&state.search, state.match_position()) {
+                (Some(s), Some((pos, total))) => format!("  /{} {pos}/{total}", s.query),
+                (Some(s), None) => format!("  /{} 0/{}", s.query, s.matches.len()),
+                (None, _) => String::new(),
+            };
+            format!(
+                " {path}  {}/{}{layout}{search}",
+                state.cursor + 1,
+                state.rows.len()
+            )
         }
         None => " no changes".to_string(),
     };
-    let hints = "j/k move  J/K hunk  ]/[ file  v layout  b sidebar  ? help  q quit ";
+    let hints = "j/k  J/K hunk  ]/[ file  / search  f jump  v layout  ? help  q ";
 
     // Pad so the hints sit right-aligned when they fit; when they don't,
     // ratatui clips at the pane edge — no manual truncation, which would

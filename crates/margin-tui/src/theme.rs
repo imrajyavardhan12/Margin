@@ -45,6 +45,8 @@ pub struct Theme {
     pub sidebar_selected: Style,
     pub status_bar: Style,
     pub help_border: Style,
+    /// Search match highlight (`/` results).
+    pub search_match: Style,
     /// syntect theme used for code coloring; `None` disables syntax
     /// highlighting (16-color and monochrome modes).
     pub syntax_theme: Option<&'static str>,
@@ -112,6 +114,7 @@ fn ledger() -> Theme {
             .add_modifier(Modifier::BOLD),
         status_bar: Style::default().fg(Color::Black).bg(Color::Gray),
         help_border: Style::default().fg(Color::Cyan),
+        search_match: Style::default().bg(rgb(0x6b5d00)),
         syntax_theme: Some("base16-ocean.dark"),
     }
 }
@@ -144,6 +147,7 @@ fn foolscap() -> Theme {
             .add_modifier(Modifier::BOLD),
         status_bar: Style::default().fg(Color::White).bg(rgb(0x4b5563)),
         help_border: Style::default().fg(rgb(0x1d4ed8)),
+        search_match: Style::default().bg(rgb(0xffe9a0)),
         syntax_theme: Some("InspiredGitHub"),
     }
 }
@@ -178,6 +182,7 @@ fn carbon() -> Theme {
             .add_modifier(Modifier::BOLD),
         status_bar: Style::default().fg(Color::Black).bg(rgb(0xd0d0d0)),
         help_border: Style::default().fg(rgb(0xf0c674)),
+        search_match: Style::default().bg(rgb(0x806000)),
         syntax_theme: Some("base16-eighties.dark"),
     }
 }
@@ -210,6 +215,7 @@ fn blueprint() -> Theme {
             .add_modifier(Modifier::BOLD),
         status_bar: Style::default().fg(rgb(0xdcecfb)).bg(rgb(0x102a43)),
         help_border: Style::default().fg(rgb(0x7fd1ff)),
+        search_match: Style::default().bg(rgb(0x6e5d12)),
         syntax_theme: Some("Solarized (dark)"),
     }
 }
@@ -246,6 +252,7 @@ fn ansi16() -> Theme {
             .add_modifier(Modifier::BOLD),
         status_bar: Style::default().fg(Color::Black).bg(Color::Gray),
         help_border: Style::default().fg(Color::Cyan),
+        search_match: Style::default().fg(Color::Black).bg(Color::Yellow),
         syntax_theme: None,
     }
 }
@@ -270,6 +277,7 @@ fn monochrome() -> Theme {
         sidebar_selected: plain.add_modifier(Modifier::BOLD),
         status_bar: plain.add_modifier(Modifier::REVERSED),
         help_border: plain,
+        search_match: plain.add_modifier(Modifier::UNDERLINED),
         syntax_theme: None,
     }
 }

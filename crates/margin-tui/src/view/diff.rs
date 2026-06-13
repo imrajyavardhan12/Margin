@@ -192,22 +192,42 @@ fn diff_line(
     );
     let content = printable(&l.content);
 
-    let mut spans = vec![
-        Span::raw(marker.to_string()),
-        Span::styled(numbers, state.theme.line_no),
-        Span::styled(sign.to_string(), base),
-    ];
-    spans.extend(super::style::compose_content(
+    let mut content_spans = super::style::compose_content(
         &content,
         render.syntax,
         &render.emphasis,
         base,
         emphasis_patch,
-    ));
+    );
+    content_spans = highlight_matches(state, &content, content_spans);
+
+    let mut spans = vec![
+        Span::raw(marker.to_string()),
+        Span::styled(numbers, state.theme.line_no),
+        Span::styled(sign.to_string(), base),
+    ];
+    spans.extend(content_spans);
     if l.no_newline {
         spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
     }
     TLine::from(spans)
+}
+
+/// Patch the search-match style over any regex hits in this content.
+fn highlight_matches(
+    state: &AppState,
+    content: &str,
+    spans: Vec<Span<'static>>,
+) -> Vec<Span<'static>> {
+    let Some(regex) = state.search_regex() else {
+        return spans;
+    };
+    let ranges: Vec<_> = regex
+        .find_iter(content)
+        .map(|m| m.range())
+        .filter(|r| !r.is_empty())
+        .collect();
+    super::style::overlay(spans, &ranges, state.theme.search_match)
 }
 
 /// One side-by-side visual row: `marker │ old half │ divider │ new half`,
@@ -266,6 +286,7 @@ fn half_spans(
         style,
         emphasis_patch,
     );
+    content_spans = highlight_matches(state, &content, content_spans);
     if l.no_newline {
         content_spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
     }

@@ -157,6 +157,49 @@ fn empty_changeset() {
     assert_snapshot!(render(&mut state, 80, 24));
 }
 
+#[test]
+fn search_bar_while_typing() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::SearchStart);
+    for c in "setup".chars() {
+        update(&mut state, Msg::SearchInput(c));
+    }
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("/setup"), "{frame}");
+    assert!(frame.contains("matching rows"), "{frame}");
+    assert_snapshot!(frame);
+}
+
+#[test]
+fn confirmed_search_shows_badge_and_jumps() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::SearchStart);
+    for c in "setup".chars() {
+        update(&mut state, Msg::SearchInput(c));
+    }
+    update(&mut state, Msg::SearchConfirm);
+    update(&mut state, Msg::NextMatch);
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("/setup"), "badge visible: {frame}");
+    assert_snapshot!(frame);
+}
+
+#[test]
+fn picker_overlay_filters() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::PickerStart);
+    for c in "notes".chars() {
+        update(&mut state, Msg::PickerInput(c));
+    }
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("jump to file (1/4)"), "{frame}");
+    assert!(frame.contains("NOTES.md"), "{frame}");
+    assert_snapshot!(frame);
+}
+
 /// A crafted filename (the parser decodes `\033` octal escapes in quoted
 /// paths) must never put a control character into the rendered frame —
 /// not via the sidebar, the file header, or the status bar (SECURITY.md).

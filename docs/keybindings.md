@@ -13,6 +13,9 @@ a deprecation cycle, and custom keymaps are planned post-v0.3.
 | `]` / `[`, `Tab` / `Shift-Tab` | next / previous file |
 | `gg` / `G` | jump to top / bottom |
 | `Ctrl-d` / `Ctrl-u`, `PgDn` / `PgUp` | half page down / up |
+| `/` | search (regex, smart-case: capitals make it case-sensitive) |
+| `n` / `N` | next / previous match (wrapping) |
+| `f` | fuzzy file picker (type to filter, `Up`/`Down` or `Ctrl-n`/`Ctrl-p`, `Enter` jumps, `Esc` closes) |
 
 ## View
 
@@ -21,7 +24,7 @@ a deprecation cycle, and custom keymaps are planned post-v0.3.
 | `v` | switch unified / side-by-side (pins your choice over the width-based auto layout) |
 | `b` | toggle the file sidebar |
 | `?` | toggle help |
-| `Esc` | close help |
+| `Esc` | close help, then clear the active search |
 
 The layout defaults to `auto`: side-by-side when the diff pane is at least
 120 columns wide, unified below that. The status bar shows `[split]` when
@@ -38,8 +41,6 @@ side-by-side is active.
 | Key | Planned action | Issue |
 |---|---|---|
 | `w` | toggle wrap | #14 |
-| `/`, `n`, `N` | search | #7 |
-| `f` | fuzzy file picker | #7 |
 | `m` | mark file viewed | M2 |
 | `s` / `u` | stage / unstage hunk | #10 |
 | `x` | discard hunk (typed confirm) | #11 |

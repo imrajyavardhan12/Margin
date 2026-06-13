@@ -56,7 +56,7 @@ fn event_loop(
             // Windows terminals also deliver Release/Repeat events;
             // acting on those would double every keystroke.
             Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
-                if let Some(msg) = msg_for_key(key) {
+                if let Some(msg) = msg_for_key(key, state.input_mode()) {
                     update(state, msg);
                 }
             }

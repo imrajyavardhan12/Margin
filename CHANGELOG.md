@@ -7,6 +7,13 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- Search: `/` opens incremental smart-case regex search over file paths and
+  line contents (both sides in split view); matches highlight inline,
+  `n`/`N` wrap-navigate, the status bar shows a position badge, and invalid
+  regexes report instead of failing. A keystroke over a 250k-line diff
+  costs ~10 ms (allocation-free byte scanning).
+- Fuzzy file picker: `f` opens a jump-to-file overlay with dependency-free
+  subsequence matching that prefers tight, early matches.
 - Configuration (ADR-0008): user `config.toml` (XDG paths, `$MARGIN_CONFIG`
   override), repo-local `.margin.toml` restricted by schema to display
   options, `--theme`/`--layout` flags, and `margin --dump-config`. Unknown

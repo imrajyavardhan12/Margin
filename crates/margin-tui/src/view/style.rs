@@ -1,48 +1,36 @@
-//! Span composition: layer syntax colors and intra-line emphasis over a
-//! base style without ever splitting a multi-byte character.
+//! Span composition: layer syntax colors, intra-line emphasis, and search
+//! highlights over a base style without ever splitting a multi-byte
+//! character.
 
 use std::ops::Range;
 
 use ratatui::style::Style;
 use ratatui::text::Span;
 
-/// Build the styled spans for one line's content.
-///
-/// - `syntax`: foreground-colored pieces covering `content` exactly (from
-///   the highlight cache), or `None` to render plain.
-/// - `emphasis`: byte ranges of `content` to re-style (changed words).
-/// - `base`: applied under everything (fg for plain mode, bg tint for
-///   syntax mode); syntax styles are patched over it.
-/// - `emphasis_patch`: patched over emphasized segments.
-///
-/// All boundaries (syntax pieces, emphasis ranges) originate from `&str`
-/// slicing and are therefore char-aligned; this function preserves that.
-pub(crate) fn compose_content(
-    content: &str,
-    syntax: Option<Vec<(Style, String)>>,
-    emphasis: &[Range<usize>],
-    base: Style,
-    emphasis_patch: Style,
+/// Re-style byte `ranges` of already-composed spans by patching `patch`
+/// over the affected segments. Offsets are into the concatenation of the
+/// span texts. All boundaries (span pieces, ranges) originate from `&str`
+/// slicing and are therefore char-aligned; this preserves that.
+pub(crate) fn overlay(
+    spans: Vec<Span<'static>>,
+    ranges: &[Range<usize>],
+    patch: Style,
 ) -> Vec<Span<'static>> {
-    let pieces: Vec<(Style, String)> = match syntax {
-        Some(spans) => spans
-            .into_iter()
-            .map(|(style, text)| (base.patch(style), text))
-            .collect(),
-        None => vec![(base, content.to_string())],
-    };
-
-    let mut out = Vec::with_capacity(pieces.len() + emphasis.len() * 2);
+    if ranges.is_empty() {
+        return spans;
+    }
+    let mut out = Vec::with_capacity(spans.len() + ranges.len() * 2);
     let mut offset = 0usize;
-    for (style, text) in pieces {
+    for span in spans {
+        let text = span.content.into_owned();
         let len = text.len();
         let mut start = 0usize;
         while start < len {
             let abs = offset + start;
-            let emphasized = emphasis.iter().any(|r| r.contains(&abs));
-            // Segment ends at the piece end or the nearest emphasis edge.
+            let inside = ranges.iter().any(|r| r.contains(&abs));
+            // Segment ends at the piece end or the nearest range edge.
             let mut end_abs = offset + len;
-            for range in emphasis {
+            for range in ranges {
                 if range.start > abs {
                     end_abs = end_abs.min(range.start);
                 } else if range.contains(&abs) {
@@ -51,19 +39,40 @@ pub(crate) fn compose_content(
             }
             let end = end_abs - offset;
             let segment = text.get(start..end).unwrap_or_default().to_string();
-            let segment_style = if emphasized {
-                style.patch(emphasis_patch)
+            let style = if inside {
+                span.style.patch(patch)
             } else {
-                style
+                span.style
             };
             if !segment.is_empty() {
-                out.push(Span::styled(segment, segment_style));
+                out.push(Span::styled(segment, style));
             }
             start = end;
         }
         offset += len;
     }
     out
+}
+
+/// Build the styled spans for one line's content: base style (fg in plain
+/// mode, bg tint under syntax), syntax pieces patched over it, then
+/// intra-line emphasis patched over the changed words.
+pub(crate) fn compose_content(
+    content: &str,
+    syntax: Option<Vec<(Style, String)>>,
+    emphasis: &[Range<usize>],
+    base: Style,
+    emphasis_patch: Style,
+) -> Vec<Span<'static>> {
+    let pieces: Vec<Span<'static>> = match syntax {
+        Some(spans) => spans
+            .into_iter()
+            .map(|(style, text)| Span::styled(text, base.patch(style)))
+            .collect(),
+        None if content.is_empty() => Vec::new(),
+        None => vec![Span::styled(content.to_string(), base)],
+    };
+    overlay(pieces, emphasis, emphasis_patch)
 }
 
 #[cfg(test)]
@@ -116,6 +125,28 @@ mod tests {
             .map(|s| s.content.as_ref())
             .collect();
         assert_eq!(emphasized, "cd");
+    }
+
+    #[test]
+    fn overlays_stack_search_on_top_of_emphasis() {
+        let base = Style::default().fg(Color::Green);
+        let emph = Style::default().bg(Color::Red);
+        let search = Style::default().bg(Color::Yellow);
+        let spans = compose_content("abcdef", None, &[1..4], base, emph);
+        let spans = overlay(spans, &[3..5], search);
+        assert_eq!(flat(&spans), "abcdef");
+        // byte 3 was emphasized AND matches search: search bg wins (last patch).
+        let at = |needle: &str| {
+            spans
+                .iter()
+                .find(|s| s.content.as_ref() == needle)
+                .unwrap_or_else(|| panic!("segment {needle:?} missing in {spans:?}"))
+                .style
+        };
+        assert_eq!(at("bc").bg, Some(Color::Red));
+        assert_eq!(at("d").bg, Some(Color::Yellow));
+        assert_eq!(at("e").bg, Some(Color::Yellow));
+        assert_eq!(at("f").bg, None);
     }
 
     #[test]

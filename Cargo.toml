@@ -48,6 +48,8 @@ toml = "0.8"
 thiserror = "2"
 anyhow = "1"
 
+regex = "1" # search (issue 7)
+
 # Test/dev (ADR 0010)
 insta = "1"
 tempfile = "3"

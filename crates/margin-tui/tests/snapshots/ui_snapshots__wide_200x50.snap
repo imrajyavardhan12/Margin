@@ -51,4 +51,4 @@ expression: "render(&mut state, 200, 50)"
 
 
 
- src/app.rs  1/21  [split]                                                                                                            j/k move  J/K hunk  ]/[ file  v layout  b sidebar  ? help  q quit
+ src/app.rs  1/21  [split]                                                                                                               j/k  J/K hunk  ]/[ file  / search  f jump  v layout  ? help  q

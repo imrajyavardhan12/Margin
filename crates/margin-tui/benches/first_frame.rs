@@ -54,6 +54,22 @@ fn benches(c: &mut Criterion) {
         })
     });
 
+    // AC (issue #7): a search keystroke over the giant diff stays under
+    // 100 ms — each input recompiles the regex and rescans every row.
+    c.bench_function("search_keystroke/250k_lines", |b| {
+        let giant = synthetic_patch(1, 250_000);
+        let mut state = AppState::new(parse_unified(&giant).changeset);
+        update(&mut state, Msg::Resize(200, 50));
+        update(&mut state, Msg::SearchStart);
+        for c in "value_24".chars() {
+            update(&mut state, Msg::SearchInput(c));
+        }
+        b.iter(|| {
+            update(&mut state, Msg::SearchBackspace);
+            update(&mut state, Msg::SearchInput('8'));
+        })
+    });
+
     // The pathological case: one 250k-line hunk. The first frame must stay
     // bounded by the highlight budget, not the hunk size.
     let giant = synthetic_patch(1, 250_000);

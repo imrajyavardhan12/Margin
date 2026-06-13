@@ -958,6 +958,7 @@ dependencies = [
  "insta",
  "margin-core",
  "ratatui",
+ "regex",
  "syntect",
  "unicode-width 0.2.0",
 ]

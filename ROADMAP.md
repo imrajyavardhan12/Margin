@@ -19,7 +19,7 @@ your working tree.
       mode, byte-identical pager passthrough (#5)
 - [x] Config + 4 themes + ANSI-16/NO_COLOR fallback + `--dump-config` (#6)
 - [ ] Custom themes from TOML (#15, post-v0.1 candidate)
-- [ ] Search `/` and fuzzy file picker `f` (#7)
+- [x] Search `/` with match highlighting and fuzzy file picker `f` (#7)
 - [ ] Parser fuzz target + weekly fuzz CI (#8)
 - [x] Release pipeline: cargo-dist with 6-target binaries + installers
       (`v0.1.0-alpha.1` ships pre-releases; brew tap, crates.io, and the

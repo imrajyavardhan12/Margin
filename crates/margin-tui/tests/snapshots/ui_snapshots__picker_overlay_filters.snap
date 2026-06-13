@@ -1,0 +1,28 @@
+---
+source: crates/margin-tui/tests/ui_snapshots.rs
+expression: frame
+---
+ FILES (4)                ▌M src/app.rs  +4 -2
+▌M src/app.rs        +4 -2 @@ -1,5 +1,6 @@ fn setup()
+ A docs/┌ jump to file (1/4) ──────────────────────────────────────────┐
+ M asset│ > notes▌                                                     │
+ R new/p│▌A docs/NOTES.md                                              │
+        │                                                              │
+        │                                                              │
+        │                                                              │E");
+        │                                                              │_or("def
+        │                                                              │
+        │                                                              │
+        │                                                              │
+        │                                                              │
+        │                                                              │
+        │                                                              │
+        │                                                              │
+        │                                                              │
+        └──────────────────────────────────────────────────────────────┘
+                                   2 +remember the milk
+                           M assets/logo.png  +0 -0  (binary)
+                                 └ binary file: contents not shown
+                           R old/path.txt → new/path.txt  +0 -0
+                                 └ renamed without content changes
+ src/app.rs  1/23
