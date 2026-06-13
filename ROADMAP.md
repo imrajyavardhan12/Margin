@@ -21,6 +21,10 @@ your working tree.
 - [ ] Custom themes from TOML (#15, post-v0.1 candidate)
 - [x] Search `/` with match highlighting and fuzzy file picker `f` (#7)
 - [ ] Parser fuzz target + weekly fuzz CI (#8)
+- [ ] Shell completions + man page (#16)
+- [ ] examples/ directory with runnable demo patches (#17)
+- [ ] `--no-untracked` flag (#18)
+- [ ] Hunk position in the status bar (#19)
 - [x] Release pipeline: cargo-dist with 6-target binaries + installers
       (`v0.1.0-alpha.1` ships pre-releases; brew tap, crates.io, and the
       demo GIF complete with #9 at v0.1.0)
@@ -33,15 +37,21 @@ smooth scrolling on 250k lines; passthrough byte-identity; zero fuzz panics.
 - [ ] Stage / unstage hunks (`s` / `u`) (#10)
 - [ ] Discard hunk with typed confirmation + undo patch in `.git/margin/trash/` (#11)
 - [ ] Watch mode (`-w`): auto-reload on change, cursor preserved (#12)
-- [ ] Persistent viewed-state per `(repo, diff-id)`
+- [ ] Mark files viewed (`m`), persistent per `(repo, diff-id)` (#20)
+- [ ] Collapse files (`za`/`zA`) + auto-collapse generated/lockfiles (#21)
 
 ## v0.3 — Review workflows
 
 - [ ] Per-hunk review notes, exported as Markdown (paste into a PR, or feed
-      back to the agent that wrote the code)
-- [ ] `--json`: structured changeset + review decisions for scripts and agents
-- [ ] `margin pr <number>` via `gh`
-- [ ] Jujutsu (`jj`) support as a new `DiffSource`
+      back to the agent that wrote the code) (#23)
+- [ ] `--json`: structured changeset + review decisions for scripts and agents (#22)
+- [ ] `margin pr <number>` via `gh` (#24)
+- [ ] Jujutsu (`jj`) support as a new `DiffSource` (#25)
+- [ ] Custom TOML themes (#15)
+
+Unmilestoned backlog: mouse support (#26), light/dark auto-detection (#27).
+The tracker's [milestones](https://github.com/imrajyavardhan12/Margin/milestones)
+are the live source of truth.
 
 ## Toward 1.0
 
