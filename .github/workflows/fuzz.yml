@@ -55,8 +55,10 @@ jobs:
           fi
           echo "seconds=$seconds" >> "$GITHUB_OUTPUT"
       - name: Fuzz
+        # +nightly explicitly: the runner's default toolchain stays stable,
+        # and libFuzzer's -Z sanitizer flags are nightly-only.
         run: |
-          cargo fuzz run ${{ matrix.target }} -- \
+          cargo +nightly fuzz run ${{ matrix.target }} -- \
             -max_total_time=${{ steps.budget.outputs.seconds }} \
             -timeout=10 \
             -rss_limit_mb=4096
