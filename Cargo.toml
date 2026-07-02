@@ -6,6 +6,8 @@ members = [
     "crates/margin-tui",
     "crates/margin",
 ]
+# Nightly-only libfuzzer harness; kept out so fmt/clippy/deny/MSRV never see it.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.0-alpha.2"

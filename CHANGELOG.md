@@ -7,6 +7,11 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- Fuzzing (issue #8): three cargo-fuzz targets — `parse_unified` (full parse →
+  display → intraline pipeline with safety-contract asserts), `strip_ansi`
+  (never grows input, never leaks ESC, idempotent), and `intraline` (every
+  range sliceable on UTF-8 boundaries) — seeded from the patch corpus, run
+  weekly in CI with a smoke run on parser PRs.
 - Search: `/` opens incremental smart-case regex search over file paths and
   line contents (both sides in split view); matches highlight inline,
   `n`/`N` wrap-navigate, the status bar shows a position badge, and invalid

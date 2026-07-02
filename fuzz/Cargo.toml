@@ -1,0 +1,42 @@
+[package]
+name = "margin-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = "1"
+margin-core = { path = "../crates/margin-core" }
+
+[[bin]]
+name = "parse_unified"
+path = "fuzz_targets/parse_unified.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "strip_ansi"
+path = "fuzz_targets/strip_ansi.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "intraline"
+path = "fuzz_targets/intraline.rs"
+test = false
+doc = false
+bench = false
+
+# Keep symbols so libFuzzer crash reports carry readable backtraces.
+[profile.release]
+debug = 1
+
+# Standalone: excluded from the parent workspace (see root Cargo.toml) so
+# fmt/clippy/deny/MSRV jobs never build nightly-only libfuzzer-sys.
+[workspace]
