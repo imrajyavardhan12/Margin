@@ -8,6 +8,22 @@ mod picker;
 mod sidebar;
 mod split;
 mod style;
+mod wrap;
+
+pub(crate) use wrap::wrap_count;
+
+/// Columns before unified content: marker (1) + line numbers (10) + sign (1).
+pub(crate) const UNIFIED_PREFIX_COLS: usize = 12;
+
+/// Content columns for each half of a split row at this main-pane width.
+/// Shared by the renderer and `AppState::row_height` so wrapped heights and
+/// wrapped rendering can never disagree about geometry.
+pub(crate) fn split_content_widths(main_width: usize) -> (usize, usize) {
+    let usable = main_width.saturating_sub(2); // marker + divider
+    let left = usable / 2;
+    let right = usable - left;
+    (split::half_budget(left).1, split::half_budget(right).1)
+}
 
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::Line as TLine;
@@ -77,13 +93,14 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
                 .map(|f| f.display_path().into_owned())
                 .unwrap_or_default();
             let layout = if state.split_active { "  [split]" } else { "" };
+            let wrap = if state.wrap { "  [wrap]" } else { "" };
             let search = match (&state.search, state.match_position()) {
                 (Some(s), Some((pos, total))) => format!("  /{} {pos}/{total}", s.query),
                 (Some(s), None) => format!("  /{} 0/{}", s.query, s.matches.len()),
                 (None, _) => String::new(),
             };
             format!(
-                " {path}  {}/{}{layout}{search}",
+                " {path}  {}/{}{layout}{wrap}{search}",
                 state.cursor + 1,
                 state.rows.len()
             )

@@ -200,6 +200,81 @@ fn picker_overlay_filters() {
     assert_snapshot!(frame);
 }
 
+/// One file whose lines blow past 80 columns, including a full-width CJK
+/// line — the wrap (`w`) fixtures.
+const LONG_LINES: &str = "\
+diff --git a/src/long.rs b/src/long.rs
+index aaaaaaa..bbbbbbb 100644
+--- a/src/long.rs
++++ b/src/long.rs
+@@ -1,2 +1,3 @@ fn long()
+ short context line
+-let removed = compose(\"a deliberately long deleted line that sails far past eighty columns so the unified pane must wrap it onto several visual rows\");
++let added = compose(\"a deliberately long added line that also sails far past eighty columns and keeps going for a while longer so wrapping gets more than one continuation row\");
++// \u{5bbd}\u{5b57}\u{7b26}\u{6d4b}\u{8bd5}\u{ff1a}\u{8fd9}\u{4e00}\u{884c}\u{5305}\u{542b}\u{5168}\u{89d2}\u{5b57}\u{7b26}\u{ff0c}\u{7528}\u{6765}\u{9a8c}\u{8bc1}\u{6309}\u{663e}\u{793a}\u{5bbd}\u{5ea6}\u{6362}\u{884c}\u{7684}\u{6b63}\u{786e}\u{6027}\u{ff0c}\u{7edd}\u{4e0d}\u{80fd}\u{628a}\u{4e00}\u{4e2a}\u{5b57}\u{7b26}\u{5288}\u{6210}\u{4e24}\u{534a}
+";
+
+fn long_state() -> AppState {
+    let outcome = parse_unified(LONG_LINES.as_bytes());
+    assert!(outcome.warnings.is_empty(), "fixture must parse cleanly");
+    AppState::new(outcome.changeset)
+}
+
+#[test]
+fn wrapped_unified_80_cols() {
+    let mut state = long_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::ToggleWrap);
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("[wrap]"), "status must show the wrap badge");
+    assert_snapshot!(frame);
+}
+
+#[test]
+fn wrapped_split_80_cols() {
+    let mut state = long_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::ToggleLayout);
+    update(&mut state, Msg::ToggleWrap);
+    assert_snapshot!(render(&mut state, 80, 24));
+}
+
+#[test]
+fn wrap_at_40x10_does_not_panic() {
+    let mut state = long_state();
+    update(&mut state, Msg::Resize(40, 10));
+    update(&mut state, Msg::ToggleWrap);
+    update(&mut state, Msg::Bottom);
+    assert!(!render(&mut state, 40, 10).is_empty());
+    // Same terminal, forced split: halves get tiny, still no panic.
+    update(&mut state, Msg::ToggleLayout);
+    update(&mut state, Msg::GKey);
+    update(&mut state, Msg::GKey);
+    update(&mut state, Msg::Bottom);
+    assert!(!render(&mut state, 40, 10).is_empty());
+}
+
+/// The invariant behind height-aware scrolling: the cursor row's full
+/// wrapped height (capped at one screen) fits between `scroll` and the
+/// bottom of the viewport.
+#[test]
+fn wrapped_cursor_fully_visible_at_bottom() {
+    let mut state = long_state();
+    update(&mut state, Msg::Resize(80, 8));
+    update(&mut state, Msg::ToggleWrap);
+    update(&mut state, Msg::Bottom);
+    let height = state.content_height();
+    let visual: usize = (state.scroll..=state.cursor)
+        .map(|i| state.row_height(i))
+        .sum();
+    assert!(state.cursor >= state.scroll);
+    assert!(
+        visual <= height,
+        "cursor row overflows the viewport: {visual} > {height}"
+    );
+    assert_snapshot!(render(&mut state, 80, 8));
+}
+
 /// A crafted filename (the parser decodes `\033` octal escapes in quoted
 /// paths) must never put a control character into the rendered frame —
 /// not via the sidebar, the file header, or the status bar (SECURITY.md).

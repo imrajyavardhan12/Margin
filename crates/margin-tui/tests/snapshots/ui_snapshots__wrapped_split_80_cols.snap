@@ -1,0 +1,28 @@
+---
+source: crates/margin-tui/tests/ui_snapshots.rs
+expression: "render(&mut state, 80, 24)"
+---
+ FILES (1)                ▌M src/long.rs  +2 -1
+▌M src/long.rs       +2 -1 @@ -1,2 +1,3 @@ fn long()
+                              1  short context line  │   1  short context line
+                              2 -let removed = compos│   2 +let added = compose(
+                                 e("a deliberately lo│      "a deliberately long
+                                 ng deleted line that│       added line that als
+                                  sails far past eigh│      o sails far past eig
+                                 ty columns so the un│      hty columns and keep
+                                 ified pane must wrap│      s going for a while
+                                  it onto several vis│      longer so wrapping g
+                                 ual rows");         │      ets more than one co
+                                                     │      ntinuation row");
+                                                     │   3 +// 宽 字 符 测 试 ： 这 一
+                                                     │      行 包 含 全 角 字 符 ， 用 来
+                                                     │      验 证 按 显 示 宽 度 换 行 的
+                                                     │      正 确 性 ， 绝 不 能 把 一 个
+                                                     │      字 符 劈 成 两 半
+
+
+
+
+
+
+ src/long.rs  1/5  [split]  [wrap]

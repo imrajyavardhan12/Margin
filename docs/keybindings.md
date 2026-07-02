@@ -22,13 +22,14 @@ a deprecation cycle, and custom keymaps are planned post-v0.3.
 | Key | Action |
 |---|---|
 | `v` | switch unified / side-by-side (pins your choice over the width-based auto layout) |
+| `w` | toggle line wrap (off clips long lines; wrapped rows scroll as one unit) |
 | `b` | toggle the file sidebar |
 | `?` | toggle help |
 | `Esc` | close help, then clear the active search |
 
 The layout defaults to `auto`: side-by-side when the diff pane is at least
 120 columns wide, unified below that. The status bar shows `[split]` when
-side-by-side is active.
+side-by-side is active, and `[wrap]` when line wrap is on.
 
 ## Session
 
@@ -40,7 +41,6 @@ side-by-side is active.
 
 | Key | Planned action | Issue |
 |---|---|---|
-| `w` | toggle wrap | #14 |
 | `m` | mark file viewed | M2 |
 | `s` / `u` | stage / unstage hunk | #10 |
 | `x` | discard hunk (typed confirm) | #11 |
