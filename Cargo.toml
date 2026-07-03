@@ -38,7 +38,7 @@ unicode-width = "0.2" # split-pane fitting; same version ratatui uses
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 
 # Diff + highlighting (ADR 0006)
-similar = { version = "2", features = ["unicode"] }
+similar = { version = "3", features = ["unicode"] }
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 
 # CLI + config (ADR 0007, 0008)
