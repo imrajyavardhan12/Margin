@@ -4,10 +4,6 @@
 version = 2
 yanked = "deny"
 ignore = [
-    # paste is an unmaintained proc-macro pulled in by ratatui 0.29.
-    # Compile-time only, no runtime exposure; remove this entry when
-    # ratatui drops it (tracked upstream).
-    "RUSTSEC-2024-0436",
     # syntect 5 loads its bundled syntax/theme dumps with bincode 1
     # (unmaintained) and parses .sublime-syntax via yaml-rust
     # (unmaintained). Both operate on syntect's own embedded assets, not
@@ -15,6 +11,13 @@ ignore = [
     # Drop when syntect migrates off them.
     "RUSTSEC-2025-0141", # bincode 1.x
     "RUSTSEC-2024-0320", # yaml-rust
+    # quick-xml < 0.41 DoS advisories (quadratic attr scan, unbounded
+    # namespace allocation). Reached only via syntect -> plist, whose
+    # requirement caps quick-xml below the fixed 0.41; Margin never feeds
+    # XML to plist at runtime (themes are syntect's embedded dumps; custom
+    # user themes are TOML, issue #15). Drop when plist moves to >=0.41.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
 ]
 
 [licenses]
