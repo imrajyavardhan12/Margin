@@ -123,6 +123,8 @@ pub enum Msg {
     ToggleSidebar,
     /// `v`: switch unified/side-by-side, pinning over `Auto`.
     ToggleLayout,
+    /// `w`: wrap long lines instead of clipping.
+    ToggleWrap,
     ToggleHelp,
     Escape,
     Resize(u16, u16),
@@ -157,6 +159,9 @@ pub struct AppState {
     /// Whether the current rows are split-layout rows (resolved from
     /// `layout_mode` and the pane width; kept in sync by `update`).
     pub split_active: bool,
+    /// `w`: wrap long lines instead of clipping. Rows become 1..N screen
+    /// lines tall; all scroll math goes through `row_height`.
+    pub wrap: bool,
     pub pending_g: bool,
     pub should_quit: bool,
     /// Terminal size; kept current by `Msg::Resize`.
@@ -179,6 +184,7 @@ impl AppState {
             help_visible: false,
             layout_mode: LayoutMode::Auto,
             split_active: false,
+            wrap: false,
             pending_g: false,
             should_quit: false,
             viewport: (80, 24),
@@ -331,12 +337,79 @@ impl AppState {
         }
     }
 
+    /// Visual height of a row at the current pane width. 1 unless wrapping;
+    /// the renderer and this function must agree, so both defer to
+    /// `view::wrap` (see the warning there about ceil-division).
+    pub fn row_height(&self, idx: usize) -> usize {
+        if !self.wrap {
+            return 1;
+        }
+        let main_width = usize::from(self.panes().main_width);
+        match self.rows.get(idx) {
+            Some(&Row::Line {
+                file, hunk, line, ..
+            }) => {
+                let budget = main_width.saturating_sub(crate::view::UNIFIED_PREFIX_COLS);
+                self.line_wrap_count(file, hunk, line, budget)
+            }
+            Some(&Row::Split {
+                file,
+                hunk,
+                left,
+                right,
+            }) => {
+                let (left_w, right_w) = crate::view::split_content_widths(main_width);
+                let l = left.map_or(1, |(line, _)| {
+                    self.line_wrap_count(file, hunk, line, left_w)
+                });
+                let r = right.map_or(1, |(line, _)| {
+                    self.line_wrap_count(file, hunk, line, right_w)
+                });
+                l.max(r)
+            }
+            _ => 1, // headers and meta rows clip; wrap is for code content
+        }
+    }
+
+    fn line_wrap_count(&self, file: usize, hunk: usize, line: usize, budget: usize) -> usize {
+        let Some(l) = self
+            .changeset
+            .files
+            .get(file)
+            .and_then(|f| f.hunks.get(hunk))
+            .and_then(|h| h.lines.get(line))
+        else {
+            return 1;
+        };
+        let mut text = crate::view::printable(&l.content);
+        if l.no_newline {
+            text.push_str(" \u{2205}"); // the renderer wraps this suffix too
+        }
+        crate::view::wrap_count(&text, budget)
+    }
+
     fn ensure_cursor_visible(&mut self) {
         let height = self.content_height().max(1);
         if self.cursor < self.scroll {
             self.scroll = self.cursor;
-        } else if self.cursor >= self.scroll + height {
-            self.scroll = self.cursor + 1 - height;
+            return;
+        }
+        // Fill the viewport upward from the cursor: `top` becomes the
+        // smallest scroll that still shows the whole cursor row (capped at
+        // one screen). With wrap off every height is 1 and this reduces to
+        // `cursor + 1 - height`. O(viewport) per keystroke, not O(rows).
+        let mut used = self.row_height(self.cursor).min(height);
+        let mut top = self.cursor;
+        while top > self.scroll {
+            let above = self.row_height(top - 1);
+            if used + above > height {
+                break;
+            }
+            used += above;
+            top -= 1;
+        }
+        if self.scroll < top {
+            self.scroll = top;
         }
     }
 
@@ -409,6 +482,7 @@ pub fn update(state: &mut AppState, msg: Msg) {
             };
             state.refresh_layout();
         }
+        Msg::ToggleWrap => state.wrap = !state.wrap,
         Msg::ToggleHelp => state.help_visible = !state.help_visible,
         Msg::Escape => {
             if state.help_visible {

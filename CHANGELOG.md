@@ -7,6 +7,13 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- Line wrap: `w` wraps long lines in both unified and split views instead
+  of clipping them (issue #14). Wrapped rows scroll as one unit, the cursor
+  keeps its full row on screen, wrapping never splits a double-width
+  character, and syntax colors, intra-line emphasis, and search highlights
+  all carry across continuation rows. The status bar shows `[wrap]`.
+- The `?` help overlay now lists search, the file picker, and the layout
+  toggle (it had fallen behind the keymap).
 - Fuzzing (issue #8): three cargo-fuzz targets — `parse_unified` (full parse →
   display → intraline pipeline with safety-contract asserts), `strip_ansi`
   (never grows input, never leaks ESC, idempotent), and `intraline` (every

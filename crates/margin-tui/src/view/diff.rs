@@ -17,28 +17,29 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
         return;
     }
 
+    // Rows are 1 visual line tall unless wrap is on; walk until the
+    // viewport is full, truncating the last row's tail if it overflows.
     let height = usize::from(area.height);
-    let end = usize::min(state.rows.len(), state.scroll + height);
     let mut lines: Vec<TLine> = Vec::with_capacity(height);
-
-    for idx in state.scroll..end {
+    let mut idx = state.scroll;
+    while lines.len() < height && idx < state.rows.len() {
         let Some(row) = state.rows.get(idx) else {
             break;
         };
         // The cursor marker is a glyph, not just a style, so it survives
         // 16-color terminals and shows up in text snapshots.
         let marker = if idx == state.cursor { "\u{258c}" } else { " " };
-        let mut line = match *row {
-            Row::FileHeader { file } => file_header(state, file, marker),
-            Row::Meta { file } => meta_row(state, file, marker),
-            Row::HunkHeader { file, hunk } => hunk_header(state, file, hunk, marker),
+        let row_lines = match *row {
+            Row::FileHeader { file } => vec![file_header(state, file, marker)],
+            Row::Meta { file } => vec![meta_row(state, file, marker)],
+            Row::HunkHeader { file, hunk } => vec![hunk_header(state, file, hunk, marker)],
             Row::Line {
                 file,
                 hunk,
                 line,
                 old_no,
                 new_no,
-            } => diff_line(state, file, hunk, line, old_no, new_no, marker),
+            } => diff_line(state, file, hunk, line, old_no, new_no, marker, area.width),
             Row::Split {
                 file,
                 hunk,
@@ -46,10 +47,16 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
                 right,
             } => split_line(state, file, hunk, left, right, marker, area.width),
         };
-        if idx == state.cursor {
-            line = line.style(state.theme.cursor_line);
+        for mut line in row_lines {
+            if lines.len() == height {
+                break;
+            }
+            if idx == state.cursor {
+                line = line.style(state.theme.cursor_line);
+            }
+            lines.push(line);
         }
-        lines.push(line);
+        idx += 1;
     }
 
     frame.render_widget(Paragraph::new(lines), area);
@@ -167,17 +174,18 @@ fn diff_line(
     old_no: Option<u32>,
     new_no: Option<u32>,
     marker: &str,
-) -> TLine<'static> {
+    width: u16,
+) -> Vec<TLine<'static>> {
     let Some((file_diff, h)) = state
         .changeset
         .files
         .get(file)
         .and_then(|f| f.hunks.get(hunk).map(|h| (f, h)))
     else {
-        return TLine::from(marker.to_string());
+        return vec![TLine::from(marker.to_string())];
     };
     let Some(l) = h.lines.get(line) else {
-        return TLine::from(marker.to_string());
+        return vec![TLine::from(marker.to_string())];
     };
 
     let render = state
@@ -201,16 +209,42 @@ fn diff_line(
     );
     content_spans = highlight_matches(state, &content, content_spans);
 
-    let mut spans = vec![
-        Span::raw(marker.to_string()),
-        Span::styled(numbers, state.theme.line_no),
-        Span::styled(sign.to_string(), base),
-    ];
-    spans.extend(content_spans);
-    if l.no_newline {
-        spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
+    if !state.wrap {
+        let mut spans = vec![
+            Span::raw(marker.to_string()),
+            Span::styled(numbers, state.theme.line_no),
+            Span::styled(sign.to_string(), base),
+        ];
+        spans.extend(content_spans);
+        if l.no_newline {
+            spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
+        }
+        return vec![TLine::from(spans)];
     }
-    TLine::from(spans)
+
+    // Wrapped: the ∅ marker travels with the content so `row_height`'s
+    // prediction (which appends it to the text) stays exact.
+    if l.no_newline {
+        content_spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
+    }
+    let budget = usize::from(width).saturating_sub(super::UNIFIED_PREFIX_COLS);
+    super::wrap::wrap_spans(content_spans, budget)
+        .into_iter()
+        .enumerate()
+        .map(|(i, chunk)| {
+            let mut spans = if i == 0 {
+                vec![
+                    Span::raw(marker.to_string()),
+                    Span::styled(numbers.clone(), state.theme.line_no),
+                    Span::styled(sign.to_string(), base),
+                ]
+            } else {
+                vec![Span::raw(" ".repeat(super::UNIFIED_PREFIX_COLS))]
+            };
+            spans.extend(chunk);
+            TLine::from(spans)
+        })
+        .collect()
 }
 
 /// Patch the search-match style over any regex hits in this content.
@@ -232,6 +266,8 @@ fn highlight_matches(
 
 /// One side-by-side visual row: `marker │ old half │ divider │ new half`,
 /// composed as a single full-width line so the cursor bar spans both panes.
+/// With wrap on, both halves chunk independently and the row is as tall as
+/// its taller half; the shorter side pads with blanks.
 fn split_line(
     state: &AppState,
     file: usize,
@@ -240,15 +276,123 @@ fn split_line(
     right: Option<(usize, u32)>,
     marker: &str,
     width: u16,
-) -> TLine<'static> {
+) -> Vec<TLine<'static>> {
     let usable = usize::from(width).saturating_sub(2); // marker + divider
     let left_width = usable / 2;
     let right_width = usable - left_width;
-    let mut spans = vec![Span::raw(marker.to_string())];
-    spans.extend(half_spans(state, file, hunk, left, left_width));
-    spans.push(Span::styled("\u{2502}".to_string(), state.theme.line_no));
-    spans.extend(half_spans(state, file, hunk, right, right_width));
-    TLine::from(spans)
+
+    if !state.wrap {
+        let mut spans = vec![Span::raw(marker.to_string())];
+        spans.extend(half_spans(state, file, hunk, left, left_width));
+        spans.push(Span::styled("\u{2502}".to_string(), state.theme.line_no));
+        spans.extend(half_spans(state, file, hunk, right, right_width));
+        return vec![TLine::from(spans)];
+    }
+
+    let mut left_half = half_wrap(state, file, hunk, left, left_width);
+    let mut right_half = half_wrap(state, file, hunk, right, right_width);
+    let rows = left_half
+        .as_ref()
+        .map_or(1, |h| h.chunks.len())
+        .max(right_half.as_ref().map_or(1, |h| h.chunks.len()));
+    (0..rows)
+        .map(|i| {
+            let mut spans = vec![Span::raw(if i == 0 {
+                marker.to_string()
+            } else {
+                " ".to_string()
+            })];
+            push_half_row(&mut spans, left_half.as_mut(), i, left_width);
+            spans.push(Span::styled("\u{2502}".to_string(), state.theme.line_no));
+            push_half_row(&mut spans, right_half.as_mut(), i, right_width);
+            TLine::from(spans)
+        })
+        .collect()
+}
+
+/// One half of a wrapped split row: the first sub-row's gutter (line
+/// number and sign) plus the content chunks. `None` means the side is
+/// absent and renders as blanks.
+struct HalfWrap {
+    gutter: Vec<Span<'static>>,
+    gutter_cols: usize,
+    chunks: Vec<Vec<Span<'static>>>,
+}
+
+fn half_wrap(
+    state: &AppState,
+    file: usize,
+    hunk: usize,
+    side: Option<(usize, u32)>,
+    half_width: usize,
+) -> Option<HalfWrap> {
+    let (number_width, content_width) = super::split::half_budget(half_width);
+    let (file_diff, h, l, line_idx, no) = side.and_then(|(line, no)| {
+        state
+            .changeset
+            .files
+            .get(file)
+            .and_then(|f| f.hunks.get(hunk).map(|h| (f, h)))
+            .and_then(|(f, h)| h.lines.get(line).map(|l| (f, h, l, line, no)))
+    })?;
+
+    let render = state
+        .highlight
+        .line_render(file, hunk, &file_diff.display_path(), h, line_idx);
+    let (sign, style, emphasis_patch) = line_styles(state, l.kind, render.syntax.is_some());
+    let content = printable(&l.content);
+
+    let mut content_spans = super::style::compose_content(
+        &content,
+        render.syntax,
+        &render.emphasis,
+        style,
+        emphasis_patch,
+    );
+    content_spans = highlight_matches(state, &content, content_spans);
+    if l.no_newline {
+        content_spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
+    }
+
+    Some(HalfWrap {
+        gutter: vec![
+            Span::styled(
+                format!("{:>width$} ", no, width = number_width),
+                state.theme.line_no,
+            ),
+            Span::styled(sign.to_string(), style),
+        ],
+        gutter_cols: number_width + 2, // number + space + sign
+        chunks: super::wrap::wrap_spans(content_spans, content_width),
+    })
+}
+
+/// Append sub-row `i` of a wrapped half: gutter (or blanks) plus the chunk
+/// fitted to the half's content columns; an absent side is all blanks.
+fn push_half_row(
+    out: &mut Vec<Span<'static>>,
+    half: Option<&mut HalfWrap>,
+    i: usize,
+    half_width: usize,
+) {
+    let Some(half) = half else {
+        out.push(Span::raw(" ".repeat(half_width)));
+        return;
+    };
+    if i == 0 {
+        out.append(&mut half.gutter);
+    } else {
+        out.push(Span::raw(" ".repeat(half.gutter_cols.min(half_width))));
+    }
+    let chunk = half
+        .chunks
+        .get_mut(i)
+        .map(std::mem::take)
+        .unwrap_or_default();
+    out.extend(super::split::fit_spans(
+        chunk,
+        half_width.saturating_sub(half.gutter_cols),
+    ));
 }
 
 /// Render one half of a split row: line number gutter + sign + content,

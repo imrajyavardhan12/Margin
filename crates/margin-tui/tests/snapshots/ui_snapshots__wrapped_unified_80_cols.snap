@@ -1,0 +1,28 @@
+---
+source: crates/margin-tui/tests/ui_snapshots.rs
+expression: frame
+---
+ FILES (1)                ▌M src/long.rs  +2 -1
+▌M src/long.rs       +2 -1 @@ -1,2 +1,3 @@ fn long()
+                              1    1  short context line
+                              2      -let removed = compose("a deliberately long
+                                       deleted line that sails far past eighty c
+                                      olumns so the unified pane must wrap it on
+                                      to several visual rows");
+                                   2 +let added = compose("a deliberately long a
+                                      dded line that also sails far past eighty
+                                      columns and keeps going for a while longer
+                                       so wrapping gets more than one continuati
+                                      on row");
+                                   3 +// 宽 字 符 测 试 ： 这 一 行 包 含 全 角 字 符 ， 用 来 验
+                                      证 按 显 示 宽 度 换 行 的 正 确 性 ， 绝 不 能 把 一 个 字 符
+                                      劈 成 两 半
+
+
+
+
+
+
+
+
+ src/long.rs  1/6  [wrap]
