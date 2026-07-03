@@ -29,7 +29,7 @@ margin-vcs = { path = "crates/margin-vcs", version = "0.1.0-alpha.2" }
 margin-tui = { path = "crates/margin-tui", version = "0.1.0-alpha.2" }
 
 # TUI (ADR 0002)
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 unicode-width = "0.2" # split-pane fitting; same version ratatui uses
 
