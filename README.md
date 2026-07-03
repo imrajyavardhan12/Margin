@@ -7,12 +7,14 @@ changes, staged/unstaged work, patches — and the changesets your AI agents
 keep producing. One static binary. No runtime. Starts before you finish
 blinking.
 
-<!-- DEMO GIF: assets/demo.tape renders this with vhs (issue #10) -->
-<!-- ![margin demo](assets/demo.gif) -->
+<!-- Regenerate: cargo build --release -p margin && vhs assets/demo.tape -->
+![margin demo](assets/demo.gif)
 
-> **Status: pre-alpha.** The foundation is laid (see
-> [BLUEPRINT](docs/BLUEPRINT.md) and [docs/adr/](docs/adr/)); the viewer is
-> being built in the open. Watch the repo or grab an issue.
+> **Status: alpha.** The reviewer works today — unified and side-by-side
+> layouts, syntax highlighting with word-level emphasis, incremental regex
+> search, fuzzy file jump, line wrap, four themes, and a git-verb CLI with a
+> byte-identical pager mode. Staging, discard, and watch mode land in v0.2
+> (see [docs/adr/](docs/adr/) for the plan). Watch the repo or grab an issue.
 
 ## Why margin
 
