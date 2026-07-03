@@ -5,6 +5,8 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+## [0.1.0-rc.1] - 2026-07-03
+
 ### Added
 
 - Line wrap: `w` wraps long lines in both unified and split views instead
