@@ -29,6 +29,8 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
         // The cursor marker is a glyph, not just a style, so it survives
         // 16-color terminals and shows up in text snapshots.
         let marker = if idx == state.cursor { "\u{258c}" } else { " " };
+        // Wrapped rows only ever materialize what still fits on screen.
+        let cap = height - lines.len();
         let row_lines = match *row {
             Row::FileHeader { file } => vec![file_header(state, file, marker)],
             Row::Meta { file } => vec![meta_row(state, file, marker)],
@@ -39,13 +41,15 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
                 line,
                 old_no,
                 new_no,
-            } => diff_line(state, file, hunk, line, old_no, new_no, marker, area.width),
+            } => diff_line(
+                state, file, hunk, line, old_no, new_no, marker, area.width, cap,
+            ),
             Row::Split {
                 file,
                 hunk,
                 left,
                 right,
-            } => split_line(state, file, hunk, left, right, marker, area.width),
+            } => split_line(state, file, hunk, left, right, marker, area.width, cap),
         };
         for mut line in row_lines {
             if lines.len() == height {
@@ -165,6 +169,56 @@ fn line_styles(state: &AppState, kind: LineKind, has_syntax: bool) -> (&'static 
     }
 }
 
+/// Resolve a hunk line to everything rendering needs. `None` when any
+/// index is out of bounds (rendered as an empty/blank row upstream).
+fn resolve_line(
+    state: &AppState,
+    file: usize,
+    hunk: usize,
+    line: usize,
+) -> Option<(&FileDiff, &margin_core::Hunk, &margin_core::Line)> {
+    state
+        .changeset
+        .files
+        .get(file)
+        .and_then(|f| f.hunks.get(hunk).map(|h| (f, h)))
+        .and_then(|(f, h)| h.lines.get(line).map(|l| (f, h, l)))
+}
+
+/// THE content pipeline: syntax + intra-line emphasis + search overlay +
+/// the no-newline suffix, as styled spans, plus the sign/base style for
+/// the gutter. Every rendered line — unified or split, wrapped or not —
+/// comes from here, and `AppState::line_wrap_count` measures the same
+/// text (`printable` + `NO_NEWLINE_SUFFIX`); see the AGENTS.md gotcha.
+fn composed_line_spans(
+    state: &AppState,
+    file: usize,
+    hunk: usize,
+    line: usize,
+) -> Option<(Vec<Span<'static>>, &'static str, Style)> {
+    let (file_diff, h, l) = resolve_line(state, file, hunk, line)?;
+    let render = state
+        .highlight
+        .line_render(file, hunk, &file_diff.display_path(), h, line);
+    let (sign, base, emphasis_patch) = line_styles(state, l.kind, render.syntax.is_some());
+    let content = printable(&l.content);
+    let mut spans = super::style::compose_content(
+        &content,
+        render.syntax,
+        &render.emphasis,
+        base,
+        emphasis_patch,
+    );
+    spans = highlight_matches(state, &content, spans);
+    if l.no_newline {
+        spans.push(Span::styled(
+            super::NO_NEWLINE_SUFFIX.to_string(),
+            state.theme.meta,
+        ));
+    }
+    Some((spans, sign, base))
+}
+
 #[allow(clippy::too_many_arguments)] // private helper mirroring Row::Line's payload
 fn diff_line(
     state: &AppState,
@@ -175,60 +229,23 @@ fn diff_line(
     new_no: Option<u32>,
     marker: &str,
     width: u16,
+    cap: usize,
 ) -> Vec<TLine<'static>> {
-    let Some((file_diff, h)) = state
-        .changeset
-        .files
-        .get(file)
-        .and_then(|f| f.hunks.get(hunk).map(|h| (f, h)))
-    else {
+    let Some((content_spans, sign, base)) = composed_line_spans(state, file, hunk, line) else {
         return vec![TLine::from(marker.to_string())];
     };
-    let Some(l) = h.lines.get(line) else {
-        return vec![TLine::from(marker.to_string())];
-    };
-
-    let render = state
-        .highlight
-        .line_render(file, hunk, &file_diff.display_path(), h, line);
-    let (sign, base, emphasis_patch) = line_styles(state, l.kind, render.syntax.is_some());
-
     let numbers = format!(
         "{:>4} {:>4} ",
         old_no.map(|n| n.to_string()).unwrap_or_default(),
         new_no.map(|n| n.to_string()).unwrap_or_default(),
     );
-    let content = printable(&l.content);
-
-    let mut content_spans = super::style::compose_content(
-        &content,
-        render.syntax,
-        &render.emphasis,
-        base,
-        emphasis_patch,
-    );
-    content_spans = highlight_matches(state, &content, content_spans);
-
-    if !state.wrap {
-        let mut spans = vec![
-            Span::raw(marker.to_string()),
-            Span::styled(numbers, state.theme.line_no),
-            Span::styled(sign.to_string(), base),
-        ];
-        spans.extend(content_spans);
-        if l.no_newline {
-            spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
-        }
-        return vec![TLine::from(spans)];
-    }
-
-    // Wrapped: the ∅ marker travels with the content so `row_height`'s
-    // prediction (which appends it to the text) stays exact.
-    if l.no_newline {
-        content_spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
-    }
     let budget = usize::from(width).saturating_sub(super::UNIFIED_PREFIX_COLS);
-    super::wrap::wrap_spans(content_spans, budget)
+    let chunks = if state.wrap {
+        super::wrap::wrap_spans(content_spans, budget, cap)
+    } else {
+        vec![content_spans] // single row; ratatui clips at the pane edge
+    };
+    chunks
         .into_iter()
         .enumerate()
         .map(|(i, chunk)| {
@@ -268,6 +285,7 @@ fn highlight_matches(
 /// composed as a single full-width line so the cursor bar spans both panes.
 /// With wrap on, both halves chunk independently and the row is as tall as
 /// its taller half; the shorter side pads with blanks.
+#[allow(clippy::too_many_arguments)] // private helper mirroring Row::Split's payload
 fn split_line(
     state: &AppState,
     file: usize,
@@ -276,25 +294,14 @@ fn split_line(
     right: Option<(usize, u32)>,
     marker: &str,
     width: u16,
+    cap: usize,
 ) -> Vec<TLine<'static>> {
-    let usable = usize::from(width).saturating_sub(2); // marker + divider
-    let left_width = usable / 2;
-    let right_width = usable - left_width;
-
-    if !state.wrap {
-        let mut spans = vec![Span::raw(marker.to_string())];
-        spans.extend(half_spans(state, file, hunk, left, left_width));
-        spans.push(Span::styled("\u{2502}".to_string(), state.theme.line_no));
-        spans.extend(half_spans(state, file, hunk, right, right_width));
-        return vec![TLine::from(spans)];
-    }
-
-    let mut left_half = half_wrap(state, file, hunk, left, left_width);
-    let mut right_half = half_wrap(state, file, hunk, right, right_width);
-    let rows = left_half
-        .as_ref()
-        .map_or(1, |h| h.chunks.len())
-        .max(right_half.as_ref().map_or(1, |h| h.chunks.len()));
+    let (left_width, right_width) = super::split_halves(usize::from(width));
+    let left_rows = half_rows(state, file, hunk, left, left_width, cap);
+    let right_rows = half_rows(state, file, hunk, right, right_width, cap);
+    let rows = left_rows.len().max(right_rows.len());
+    let mut left_rows = left_rows.into_iter();
+    let mut right_rows = right_rows.into_iter();
     (0..rows)
         .map(|i| {
             let mut spans = vec![Span::raw(if i == 0 {
@@ -302,146 +309,60 @@ fn split_line(
             } else {
                 " ".to_string()
             })];
-            push_half_row(&mut spans, left_half.as_mut(), i, left_width);
+            spans.extend(left_rows.next().unwrap_or_else(|| blank_half(left_width)));
             spans.push(Span::styled("\u{2502}".to_string(), state.theme.line_no));
-            push_half_row(&mut spans, right_half.as_mut(), i, right_width);
+            spans.extend(right_rows.next().unwrap_or_else(|| blank_half(right_width)));
             TLine::from(spans)
         })
         .collect()
 }
 
-/// One half of a wrapped split row: the first sub-row's gutter (line
-/// number and sign) plus the content chunks. `None` means the side is
-/// absent and renders as blanks.
-struct HalfWrap {
-    gutter: Vec<Span<'static>>,
-    gutter_cols: usize,
-    chunks: Vec<Vec<Span<'static>>>,
+fn blank_half(half_width: usize) -> Vec<Span<'static>> {
+    vec![Span::raw(" ".repeat(half_width))]
 }
 
-fn half_wrap(
+/// One half of a split row, pre-assembled as 1..=cap full-width sub-rows:
+/// gutter (line number + sign) on the first, blanks after, each fitted to
+/// exactly `half_width` columns. An absent or unresolvable side is one
+/// blank sub-row (the zip in `split_line` pads the rest).
+fn half_rows(
     state: &AppState,
     file: usize,
     hunk: usize,
     side: Option<(usize, u32)>,
     half_width: usize,
-) -> Option<HalfWrap> {
+    cap: usize,
+) -> Vec<Vec<Span<'static>>> {
     let (number_width, content_width) = super::split::half_budget(half_width);
-    let (file_diff, h, l, line_idx, no) = side.and_then(|(line, no)| {
-        state
-            .changeset
-            .files
-            .get(file)
-            .and_then(|f| f.hunks.get(hunk).map(|h| (f, h)))
-            .and_then(|(f, h)| h.lines.get(line).map(|l| (f, h, l, line, no)))
-    })?;
-
-    let render = state
-        .highlight
-        .line_render(file, hunk, &file_diff.display_path(), h, line_idx);
-    let (sign, style, emphasis_patch) = line_styles(state, l.kind, render.syntax.is_some());
-    let content = printable(&l.content);
-
-    let mut content_spans = super::style::compose_content(
-        &content,
-        render.syntax,
-        &render.emphasis,
-        style,
-        emphasis_patch,
-    );
-    content_spans = highlight_matches(state, &content, content_spans);
-    if l.no_newline {
-        content_spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
-    }
-
-    Some(HalfWrap {
-        gutter: vec![
-            Span::styled(
-                format!("{:>width$} ", no, width = number_width),
-                state.theme.line_no,
-            ),
-            Span::styled(sign.to_string(), style),
-        ],
-        gutter_cols: number_width + 2, // number + space + sign
-        chunks: super::wrap::wrap_spans(content_spans, content_width),
-    })
-}
-
-/// Append sub-row `i` of a wrapped half: gutter (or blanks) plus the chunk
-/// fitted to the half's content columns; an absent side is all blanks.
-fn push_half_row(
-    out: &mut Vec<Span<'static>>,
-    half: Option<&mut HalfWrap>,
-    i: usize,
-    half_width: usize,
-) {
-    let Some(half) = half else {
-        out.push(Span::raw(" ".repeat(half_width)));
-        return;
+    let gutter_cols = number_width + 2; // number + space + sign
+    let Some((line, no)) = side else {
+        return vec![blank_half(half_width)];
     };
-    if i == 0 {
-        out.append(&mut half.gutter);
+    let Some((content_spans, sign, base)) = composed_line_spans(state, file, hunk, line) else {
+        return vec![blank_half(half_width)];
+    };
+    let chunks = if state.wrap {
+        super::wrap::wrap_spans(content_spans, content_width, cap)
     } else {
-        out.push(Span::raw(" ".repeat(half.gutter_cols.min(half_width))));
-    }
-    let chunk = half
-        .chunks
-        .get_mut(i)
-        .map(std::mem::take)
-        .unwrap_or_default();
-    out.extend(super::split::fit_spans(
-        chunk,
-        half_width.saturating_sub(half.gutter_cols),
-    ));
-}
-
-/// Render one half of a split row: line number gutter + sign + content,
-/// fitted to exactly `half_width` columns. A `None` side renders blank.
-fn half_spans(
-    state: &AppState,
-    file: usize,
-    hunk: usize,
-    side: Option<(usize, u32)>,
-    half_width: usize,
-) -> Vec<Span<'static>> {
-    let (number_width, content_width) = super::split::half_budget(half_width);
-    let resolved = side.and_then(|(line, no)| {
-        state
-            .changeset
-            .files
-            .get(file)
-            .and_then(|f| f.hunks.get(hunk).map(|h| (f, h)))
-            .and_then(|(f, h)| h.lines.get(line).map(|l| (f, h, l, line, no)))
-    });
-    let Some((file_diff, h, l, line_idx, no)) = resolved else {
-        return vec![Span::raw(" ".repeat(half_width))];
+        vec![content_spans]
     };
-
-    let render = state
-        .highlight
-        .line_render(file, hunk, &file_diff.display_path(), h, line_idx);
-    let (sign, style, emphasis_patch) = line_styles(state, l.kind, render.syntax.is_some());
-    let content = printable(&l.content);
-
-    let mut content_spans = super::style::compose_content(
-        &content,
-        render.syntax,
-        &render.emphasis,
-        style,
-        emphasis_patch,
-    );
-    content_spans = highlight_matches(state, &content, content_spans);
-    if l.no_newline {
-        content_spans.push(Span::styled(" \u{2205}".to_string(), state.theme.meta));
-    }
-
-    let mut spans = vec![
-        Span::styled(
-            format!("{:>width$} ", no, width = number_width),
-            state.theme.line_no,
-        ),
-        Span::styled(sign.to_string(), style),
-    ];
-    spans.extend(super::split::fit_spans(content_spans, content_width));
-    spans
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(i, chunk)| {
+            let mut row = if i == 0 {
+                vec![
+                    Span::styled(
+                        format!("{:>width$} ", no, width = number_width),
+                        state.theme.line_no,
+                    ),
+                    Span::styled(sign.to_string(), base),
+                ]
+            } else {
+                vec![Span::raw(" ".repeat(gutter_cols.min(half_width)))]
+            };
+            row.extend(super::split::fit_spans(chunk, content_width));
+            row
+        })
+        .collect()
 }

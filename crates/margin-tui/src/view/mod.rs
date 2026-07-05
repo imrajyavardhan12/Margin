@@ -15,13 +15,24 @@ pub(crate) use wrap::wrap_count;
 /// Columns before unified content: marker (1) + line numbers (10) + sign (1).
 pub(crate) const UNIFIED_PREFIX_COLS: usize = 12;
 
-/// Content columns for each half of a split row at this main-pane width.
-/// Shared by the renderer and `AppState::row_height` so wrapped heights and
-/// wrapped rendering can never disagree about geometry.
-pub(crate) fn split_content_widths(main_width: usize) -> (usize, usize) {
+/// The marker appended to a line that lacks a trailing newline. Measurement
+/// (`AppState::line_wrap_count`) and every renderer path must use this same
+/// constant, or wrapped heights drift from wrapped rendering.
+pub(crate) const NO_NEWLINE_SUFFIX: &str = " \u{2205}";
+
+/// Half widths (left, right) of a split row at this main-pane width — the
+/// single owner of the marker + divider arithmetic. Both the renderer
+/// (`diff::split_line`) and the height math consume this, so they can
+/// never disagree about geometry.
+pub(crate) fn split_halves(main_width: usize) -> (usize, usize) {
     let usable = main_width.saturating_sub(2); // marker + divider
     let left = usable / 2;
-    let right = usable - left;
+    (left, usable - left)
+}
+
+/// Content columns for each half of a split row at this main-pane width.
+pub(crate) fn split_content_widths(main_width: usize) -> (usize, usize) {
+    let (left, right) = split_halves(main_width);
     (split::half_budget(left).1, split::half_budget(right).1)
 }
 
