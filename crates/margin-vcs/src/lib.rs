@@ -20,9 +20,11 @@
 
 mod files;
 mod git;
+mod staging;
 
 pub use files::TwoFiles;
 pub use git::{GitRevRange, GitShow, GitStaged, GitWorktree};
+pub use staging::{apply_patch_to_index, StageError};
 
 use margin_core::Changeset;
 use std::path::PathBuf;
