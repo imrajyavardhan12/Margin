@@ -82,7 +82,7 @@ Dependency rule (compiler-enforced, do not work around):
 | VCS integration | `margin-vcs/tests/git_sources.rs` | build real temp repos with git2 (`TestRepo` helper) |
 | Binary/CLI | `margin/tests/cli.rs` | `env!("CARGO_BIN_EXE_margin")`; isolate config with `.env("MARGIN_CONFIG", ...)` |
 | Benchmarks | `*/benches/` (criterion) | budgets: first frame <50ms, scroll <16ms |
-| Fuzz | `fuzz/fuzz_targets/` | `cargo +nightly fuzz run <parse_unified\|strip_ansi\|intraline>` (needs `cargo install cargo-fuzz`); weekly CI + smoke on parser PRs; crashes become corpus fixtures |
+| Fuzz | `fuzz/fuzz_targets/` | `./fuzz/seed.sh` first, then `cargo +nightly fuzz run <parse_unified\|strip_ansi\|intraline>` (needs `cargo install cargo-fuzz`); weekly CI + smoke on parser PRs; crashes become corpus fixtures |
 
 ## Gotchas (each of these cost a debugging session)
 
