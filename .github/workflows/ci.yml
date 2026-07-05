@@ -28,7 +28,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
-      - run: cargo deny check advisories licenses bans sources
+      # Deterministic checks only: `advisories` compares against a live
+      # database, so a new RUSTSEC entry would fail whichever unrelated PR
+      # runs next. The scheduled advisories workflow owns that signal.
+      - run: cargo deny check licenses bans sources
 
   test:
     name: test (${{ matrix.os }})
