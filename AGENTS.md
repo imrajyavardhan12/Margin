@@ -105,6 +105,15 @@ Dependency rule (compiler-enforced, do not work around):
   clap_derive). Do not "update" it without checking the registry.
 - **deny.toml ignores** (paste, bincode, yaml-rust RUSTSECs) are documented
   decisions, not oversights — read the comments before touching.
+- **Wrap geometry is a two-sided contract**: `AppState::row_height` must
+  predict exactly what `view/diff.rs` renders. Line text exists in one
+  place (`composed_line_spans`, mirrored by `line_wrap_count` via
+  `printable` + `NO_NEWLINE_SUFFIX`), the break rule in one place
+  (`view::wrap::RowFill`), and split geometry in one place
+  (`view::split_halves`). Change line *content* only in
+  `composed_line_spans` + `line_wrap_count` together; `row_height`'s
+  match is deliberately exhaustive so new `Row` variants force a height
+  decision.
 - **`gh run list --limit 1` races pushes**: select CI runs by
   `--workflow ci.yml --commit $(git rev-parse HEAD)` after a short sleep.
 - Windows CI is real: key handling filters `KeyEventKind::Press` (Windows

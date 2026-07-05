@@ -367,7 +367,9 @@ impl AppState {
                 });
                 l.max(r)
             }
-            _ => 1, // headers and meta rows clip; wrap is for code content
+            // Exhaustive on purpose: a new Row variant must decide its
+            // height here or scroll math silently treats it as one line.
+            Some(Row::FileHeader { .. } | Row::Meta { .. } | Row::HunkHeader { .. }) | None => 1,
         }
     }
 
@@ -381,11 +383,15 @@ impl AppState {
         else {
             return 1;
         };
+        // Must measure exactly the text `composed_line_spans` renders:
+        // printable content plus the shared no-newline suffix.
         let mut text = crate::view::printable(&l.content);
         if l.no_newline {
-            text.push_str(" \u{2205}"); // the renderer wraps this suffix too
+            text.push_str(crate::view::NO_NEWLINE_SUFFIX);
         }
-        crate::view::wrap_count(&text, budget)
+        // Heights are only ever compared against the viewport, so counting
+        // can saturate one past it.
+        crate::view::wrap_count(&text, budget, self.content_height().max(1) + 1)
     }
 
     fn ensure_cursor_visible(&mut self) {
