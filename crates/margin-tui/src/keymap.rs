@@ -38,6 +38,8 @@ fn normal(key: KeyEvent, ctrl: bool) -> Option<Msg> {
         KeyCode::Char('n') => Some(Msg::NextMatch),
         KeyCode::Char('N') => Some(Msg::PrevMatch),
         KeyCode::Char('f') => Some(Msg::PickerStart),
+        KeyCode::Char('s') => Some(Msg::StageHunk),
+        KeyCode::Char('u') => Some(Msg::UnstageHunk),
         KeyCode::Char('v') => Some(Msg::ToggleLayout),
         KeyCode::Char('w') => Some(Msg::ToggleWrap),
         KeyCode::Char('b') => Some(Msg::ToggleSidebar),

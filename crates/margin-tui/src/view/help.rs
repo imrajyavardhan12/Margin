@@ -16,6 +16,7 @@ const KEYS: &[(&str, &str)] = &[
     ("/", "search (regex, smart-case)"),
     ("n / N", "next / previous match"),
     ("f", "jump to file (fuzzy)"),
+    ("s / u", "stage / unstage hunk"),
     ("v", "toggle unified / side-by-side"),
     ("w", "toggle line wrap"),
     ("b", "toggle sidebar"),

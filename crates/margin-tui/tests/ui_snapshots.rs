@@ -7,7 +7,7 @@
 
 use insta::assert_snapshot;
 use margin_core::parse_unified;
-use margin_tui::{render_view, update, AppState, Msg};
+use margin_tui::{render_view, update, AppState, Command, CommandResult, HunkAction, Msg};
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::Terminal;
@@ -297,4 +297,55 @@ fn hostile_path_never_reaches_the_frame_raw() {
         frame.contains("pwned"),
         "the path itself should still render"
     );
+}
+
+/// `s` on a diff line yields the staging command carrying a reparsable
+/// single-hunk patch; the result message shows and the next key clears it.
+#[test]
+fn stage_request_result_and_clear_flow() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::CursorDown);
+    let command = update(&mut state, Msg::StageHunk).expect("line row must yield a command");
+    let Command::ApplyHunk { action, patch } = command;
+    assert_eq!(action, HunkAction::Stage);
+    assert!(patch.starts_with(b"diff --git"));
+    assert!(parse_unified(&patch).warnings.is_empty());
+
+    let reloaded = state.changeset.clone();
+    assert_eq!(
+        update(
+            &mut state,
+            Msg::CommandFinished(CommandResult::Applied {
+                action,
+                changeset: reloaded,
+            }),
+        ),
+        None
+    );
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("hunk staged"), "{frame}");
+    assert_snapshot!(frame);
+
+    update(&mut state, Msg::CursorDown);
+    assert!(!render(&mut state, 80, 24).contains("hunk staged"));
+}
+
+#[test]
+fn stage_refuses_off_hunk_and_reports_stale() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    // Cursor starts on the file header: no hunk to stage.
+    assert_eq!(update(&mut state, Msg::StageHunk), None);
+    assert!(render(&mut state, 80, 24).contains("no hunk under the cursor"));
+
+    update(&mut state, Msg::CommandFinished(CommandResult::Stale));
+    assert!(render(&mut state, 80, 24).contains("no longer applies"));
+
+    update(
+        &mut state,
+        Msg::CommandFinished(CommandResult::Unsupported("staging needs a git review")),
+    );
+    assert!(render(&mut state, 80, 24).contains("staging needs a git review"));
 }

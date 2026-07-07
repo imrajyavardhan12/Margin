@@ -95,6 +95,16 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
         }
     }
 
+    // Command feedback (staged/refused/stale) takes the line until the
+    // next keypress clears it.
+    if let Some(message) = &state.status_message {
+        frame.render_widget(
+            Paragraph::new(TLine::from(format!(" {message}"))).style(state.theme.status_bar),
+            area,
+        );
+        return;
+    }
+
     let left = match state.current_file() {
         Some(idx) => {
             let path = state

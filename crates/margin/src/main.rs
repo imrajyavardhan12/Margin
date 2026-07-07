@@ -23,7 +23,10 @@ use config::{Config, LayoutChoice};
 use margin_core::{parse_unified, Changeset, FileStatus, ParseWarning};
 use margin_tui::theme::{Theme, THEME_NAMES};
 use margin_tui::AppState;
-use margin_vcs::{DiffSource, GitRevRange, GitShow, GitStaged, GitWorktree, TwoFiles};
+use margin_vcs::{
+    apply_patch_to_index, DiffSource, GitRevRange, GitShow, GitStaged, GitWorktree, StageError,
+    TwoFiles,
+};
 
 #[derive(Parser)]
 #[command(
@@ -136,6 +139,7 @@ fn main() -> ExitCode {
             run_source(
                 &GitShow::new(cwd, rev.unwrap_or_else(|| "HEAD".into())),
                 &session,
+                None,
             )
         }
         Command::Patch { input } => run_patch(input.as_deref().unwrap_or("-"), &session),
@@ -153,32 +157,32 @@ fn run_diff(args: DiffArgs, session: &Session) -> ExitCode {
         return ExitCode::from(2);
     }
     if args.staged {
-        return run_source(&GitStaged::new(cwd), session);
+        return run_source(&GitStaged::new(cwd.clone()), session, Some(cwd));
     }
 
     match args.targets.as_slice() {
         [] => {
-            let mut source = GitWorktree::new(cwd);
+            let mut source = GitWorktree::new(cwd.clone());
             source.include_untracked = session.config.include_untracked;
-            run_source(&source, session)
+            run_source(&source, session, Some(cwd))
         }
         [single] => {
             if let Some((from, to)) = split_range(single) {
-                run_source(&GitRevRange::new(cwd, from, to), session)
+                run_source(&GitRevRange::new(cwd, from, to), session, None)
             } else {
                 // `margin diff <rev>`: working tree vs that revision —
                 // git's semantics.
-                let mut source = GitWorktree::new(cwd);
+                let mut source = GitWorktree::new(cwd.clone());
                 source.include_untracked = session.config.include_untracked;
                 source.base = Some(single.clone());
-                run_source(&source, session)
+                run_source(&source, session, Some(cwd))
             }
         }
         [a, b] => {
             if Path::new(a).is_file() && Path::new(b).is_file() {
-                run_source(&TwoFiles::new(a, b), session)
+                run_source(&TwoFiles::new(a, b), session, None)
             } else {
-                run_source(&GitRevRange::new(cwd, a.clone(), b.clone()), session)
+                run_source(&GitRevRange::new(cwd, a.clone(), b.clone()), session, None)
             }
         }
         _ => unreachable!("clap caps targets at 2"),
@@ -235,14 +239,54 @@ fn run_patch(input: &str, session: &Session) -> ExitCode {
 
     // Git colorizes output destined for a pager; strip ANSI for parsing.
     let outcome = parse_unified(&margin_core::strip_ansi(&bytes));
-    let code = show(outcome.changeset, session);
+    let mut executor = VcsExecutor {
+        repo: None,
+        source: None,
+    };
+    let code = show(outcome.changeset, session, &mut executor);
     report_warnings(&outcome.warnings);
     code
 }
 
-fn run_source(source: &dyn DiffSource, session: &Session) -> ExitCode {
+/// Executes TUI commands against the real repository (ADR-0013).
+/// `repo` is Some only for index-relative reviews (worktree/--staged),
+/// where staging a displayed hunk is meaningful; everything else refuses.
+struct VcsExecutor<'a> {
+    repo: Option<PathBuf>,
+    source: Option<&'a dyn DiffSource>,
+}
+
+impl margin_tui::CommandExecutor for VcsExecutor<'_> {
+    fn execute(&mut self, command: margin_tui::Command) -> margin_tui::CommandResult {
+        use margin_tui::CommandResult;
+        let margin_tui::Command::ApplyHunk { action, patch } = command;
+        let (Some(repo), Some(source)) = (&self.repo, self.source) else {
+            return CommandResult::Unsupported("staging needs a git worktree or --staged review");
+        };
+        match apply_patch_to_index(repo, &patch) {
+            Ok(()) => match source.load() {
+                Ok(changeset) => CommandResult::Applied { action, changeset },
+                Err(err) => CommandResult::Failed(format!("applied, but reload failed: {err}")),
+            },
+            Err(StageError::Stale(_)) => CommandResult::Stale,
+            Err(err) => CommandResult::Failed(err.to_string()),
+        }
+    }
+}
+
+fn run_source(
+    source: &dyn DiffSource,
+    session: &Session,
+    staging_repo: Option<PathBuf>,
+) -> ExitCode {
     match source.load() {
-        Ok(changeset) => show(changeset, session),
+        Ok(changeset) => {
+            let mut executor = VcsExecutor {
+                repo: staging_repo,
+                source: Some(source),
+            };
+            show(changeset, session, &mut executor)
+        }
         Err(err) => {
             eprintln!("margin: {err}");
             ExitCode::from(2)
@@ -251,7 +295,11 @@ fn run_source(source: &dyn DiffSource, session: &Session) -> ExitCode {
 }
 
 /// Render a changeset: TUI on a terminal, plain summary when piped.
-fn show(changeset: Changeset, session: &Session) -> ExitCode {
+fn show(
+    changeset: Changeset,
+    session: &Session,
+    executor: &mut dyn margin_tui::CommandExecutor,
+) -> ExitCode {
     if !std::io::stdout().is_terminal() {
         print_summary(&changeset);
         return ExitCode::SUCCESS;
@@ -259,7 +307,7 @@ fn show(changeset: Changeset, session: &Session) -> ExitCode {
     let mut state = AppState::new(changeset);
     state.apply_theme(session.theme.clone());
     state.set_layout_mode(session.config.layout.into());
-    match margin_tui::run(&mut state) {
+    match margin_tui::run(&mut state, executor) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("margin: terminal error: {err}");
