@@ -43,6 +43,9 @@ pub struct Theme {
     pub cursor_line: Style,
     pub sidebar_title: Style,
     pub sidebar_selected: Style,
+    /// The sidebar's staged-file indicator (a dot beside files with index
+    /// content); reads as "staged", so it echoes the addition color.
+    pub sidebar_staged: Style,
     pub status_bar: Style,
     pub help_border: Style,
     /// Search match highlight (`/` results).
@@ -112,6 +115,7 @@ fn ledger() -> Theme {
         sidebar_selected: Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
+        sidebar_staged: Style::default().fg(Color::Green),
         status_bar: Style::default().fg(Color::Black).bg(Color::Gray),
         help_border: Style::default().fg(Color::Cyan),
         search_match: Style::default().bg(rgb(0x6b5d00)),
@@ -145,6 +149,7 @@ fn foolscap() -> Theme {
         sidebar_selected: Style::default()
             .fg(Color::Black)
             .add_modifier(Modifier::BOLD),
+        sidebar_staged: Style::default().fg(rgb(0x1a6a2e)),
         status_bar: Style::default().fg(Color::White).bg(rgb(0x4b5563)),
         help_border: Style::default().fg(rgb(0x1d4ed8)),
         search_match: Style::default().bg(rgb(0xffe9a0)),
@@ -180,6 +185,7 @@ fn carbon() -> Theme {
         sidebar_selected: Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
+        sidebar_staged: Style::default().fg(rgb(0x3ddc84)),
         status_bar: Style::default().fg(Color::Black).bg(rgb(0xd0d0d0)),
         help_border: Style::default().fg(rgb(0xf0c674)),
         search_match: Style::default().bg(rgb(0x806000)),
@@ -213,6 +219,7 @@ fn blueprint() -> Theme {
         sidebar_selected: Style::default()
             .fg(rgb(0xdcecfb))
             .add_modifier(Modifier::BOLD),
+        sidebar_staged: Style::default().fg(rgb(0x6fe3a1)),
         status_bar: Style::default().fg(rgb(0xdcecfb)).bg(rgb(0x102a43)),
         help_border: Style::default().fg(rgb(0x7fd1ff)),
         search_match: Style::default().bg(rgb(0x6e5d12)),
@@ -250,6 +257,7 @@ fn ansi16() -> Theme {
         sidebar_selected: Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
+        sidebar_staged: Style::default().fg(Color::Green),
         status_bar: Style::default().fg(Color::Black).bg(Color::Gray),
         help_border: Style::default().fg(Color::Cyan),
         search_match: Style::default().fg(Color::Black).bg(Color::Yellow),
@@ -275,6 +283,7 @@ fn monochrome() -> Theme {
         cursor_line: plain.add_modifier(Modifier::REVERSED),
         sidebar_title: plain.add_modifier(Modifier::BOLD),
         sidebar_selected: plain.add_modifier(Modifier::BOLD),
+        sidebar_staged: plain.add_modifier(Modifier::BOLD),
         status_bar: plain.add_modifier(Modifier::REVERSED),
         help_border: plain,
         search_match: plain.add_modifier(Modifier::UNDERLINED),

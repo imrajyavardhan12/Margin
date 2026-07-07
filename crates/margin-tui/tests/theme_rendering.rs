@@ -7,7 +7,7 @@
 
 use margin_core::parse_unified;
 use margin_tui::theme::{ColorMode, Theme, THEME_NAMES};
-use margin_tui::{render_view, update, AppState, Msg};
+use margin_tui::{render_view, update, AppState, Msg, StagedFiles};
 use ratatui::backend::TestBackend;
 use ratatui::style::Color;
 use ratatui::Terminal;
@@ -87,4 +87,29 @@ fn monochrome_emits_no_color_at_all() {
             assert_eq!(color, Color::Reset, "NO_COLOR mode painted {color:?}");
         }
     }
+}
+
+/// The sidebar's staged dot is the one cell painted in `sidebar_staged`;
+/// snapshots can't see its color, so assert on the cell style directly.
+#[test]
+fn staged_indicator_wears_the_staged_style() {
+    let mut state = AppState::new(parse_unified(SAMPLE.as_bytes()).changeset);
+    let theme = Theme::resolve("ledger", ColorMode::TrueColor).unwrap();
+    let staged_fg = theme.sidebar_staged.fg;
+    state.apply_theme(theme);
+    // Stage the sample's only file, so its sidebar row lights up.
+    state.staged = StagedFiles::from_staged_changeset(&parse_unified(SAMPLE.as_bytes()).changeset);
+    update(&mut state, Msg::Resize(80, 24));
+
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    terminal.draw(|f| render_view(&state, f)).unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    let area = buffer.area();
+    let marked = (0..area.height)
+        .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+        .any(|(x, y)| {
+            let cell = &buffer[(x, y)];
+            cell.symbol() == "\u{25cf}" && cell.style().fg == staged_fg
+        });
+    assert!(marked, "the staged dot must be painted in sidebar_staged");
 }

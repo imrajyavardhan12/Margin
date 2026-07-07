@@ -5,7 +5,8 @@
 //! arrive, they return as commands executed by the runtime shell.
 
 use margin_core::{
-    render_hunk_patch, render_reversed_hunk_patch, Changeset, Hunk, LineKind, RenderRefusal,
+    render_hunk_patch, render_reversed_hunk_patch, Changeset, FileDiff, Hunk, LineKind,
+    RenderRefusal,
 };
 
 /// How the diff pane lays out changes.
@@ -123,6 +124,49 @@ impl HunkAction {
     }
 }
 
+/// Which paths currently have content staged in the index (index vs HEAD).
+///
+/// The sidebar's staged indicator reads this. It is pure data: the runtime
+/// shell loads the `GitStaged` diff and hands the reduced set in, so
+/// margin-tui never touches git (the same inversion as `DiffSource`,
+/// ADR-0005). Matching is by the file's canonical byte path, so a file
+/// modified in both the worktree and the index lines up across the two
+/// diffs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StagedFiles {
+    paths: std::collections::HashSet<Vec<u8>>,
+}
+
+impl StagedFiles {
+    /// Reduce an index-vs-HEAD changeset to the set of staged paths.
+    pub fn from_staged_changeset(changeset: &Changeset) -> Self {
+        Self {
+            paths: changeset
+                .files
+                .iter()
+                .filter_map(staged_path_key)
+                .map(<[u8]>::to_vec)
+                .collect(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.paths.is_empty()
+    }
+
+    /// Whether this file (from the review) has staged content.
+    pub fn is_staged(&self, file: &FileDiff) -> bool {
+        staged_path_key(file).is_some_and(|key| self.paths.contains(key))
+    }
+}
+
+/// The byte path that identifies a file across the worktree and index
+/// diffs: the new side, falling back to the old (deleted files) — mirroring
+/// `FileDiff::display_path`'s choice, but on raw bytes so the match is exact.
+fn staged_path_key(file: &FileDiff) -> Option<&[u8]> {
+    file.new_path.as_deref().or(file.old_path.as_deref())
+}
+
 /// Data-only effects returned by [`update`]; the runtime executes them
 /// (ADR-0003: no I/O in the core, ADR-0013: writes are explicit).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,10 +179,12 @@ pub enum Command {
 /// [`Msg::CommandFinished`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandResult {
-    /// The write succeeded; here is the reloaded changeset.
+    /// The write succeeded; here is the reloaded changeset and the
+    /// refreshed staged-files summary for the sidebar.
     Applied {
         action: HunkAction,
         changeset: Changeset,
+        staged: StagedFiles,
     },
     /// The hunk no longer applies — the world moved since load.
     Stale,
@@ -226,6 +272,10 @@ pub struct AppState {
     /// One-shot feedback line (command outcomes, refusals); cleared by
     /// the next keypress.
     pub status_message: Option<String>,
+    /// Which files have staged content, for the sidebar indicator. Set by
+    /// the runtime shell at startup and refreshed after each index write;
+    /// empty for sources that cannot stage (patches, ranges, two files).
+    pub staged: StagedFiles,
     pub search: Option<SearchState>,
     pub picker: Option<PickerState>,
 }
@@ -248,6 +298,7 @@ impl AppState {
             theme: crate::theme::Theme::default(),
             highlight: crate::highlight::HighlightCache::default(),
             status_message: None,
+            staged: StagedFiles::default(),
             search: None,
             picker: None,
         };
@@ -496,9 +547,14 @@ impl AppState {
     /// highlight cache is index-keyed and must rebuild), report otherwise.
     fn finish_command(&mut self, result: CommandResult) {
         match result {
-            CommandResult::Applied { action, changeset } => {
+            CommandResult::Applied {
+                action,
+                changeset,
+                staged,
+            } => {
                 let anchor = self.rows.get(self.cursor).copied();
                 self.changeset = changeset;
+                self.staged = staged;
                 self.rows = build_rows(&self.changeset, self.split_active);
                 self.cursor = anchor.map_or(0, |a| locate(&self.rows, a));
                 self.clamp_cursor();

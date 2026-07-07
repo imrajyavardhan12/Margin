@@ -2,7 +2,7 @@
 
 use margin_core::FileStatus;
 use ratatui::layout::Rect;
-use ratatui::text::Line as TLine;
+use ratatui::text::{Line as TLine, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
@@ -29,16 +29,29 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
             FileStatus::Copied => "C",
         };
         let counts = format!(" +{} -{}", file.additions(), file.deletions());
-        let path_room = width.saturating_sub(3 + counts.len());
+        // Reserve one column for the staged dot so files stay aligned and
+        // the indicator lights up in place as hunks are staged/unstaged.
+        let path_room = width.saturating_sub(4 + counts.len());
         let path = truncate_left(&file.display_path(), path_room);
         let pad = path_room.saturating_sub(path.chars().count());
-        let text = format!("{marker}{glyph} {path}{}{counts}", " ".repeat(pad));
-        let style = if selected {
+        let base = if selected {
             state.theme.sidebar_selected
         } else {
             state.theme.context
         };
-        lines.push(TLine::styled(text, style));
+        let staged = state.staged.is_staged(file);
+        lines.push(TLine::from(vec![
+            Span::styled(marker, base),
+            Span::styled(
+                if staged { "\u{25cf}" } else { " " },
+                if staged {
+                    state.theme.sidebar_staged
+                } else {
+                    base
+                },
+            ),
+            Span::styled(format!("{glyph} {path}{}{counts}", " ".repeat(pad)), base),
+        ]));
     }
 
     frame.render_widget(Paragraph::new(lines), area);
