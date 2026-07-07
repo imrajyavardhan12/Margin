@@ -11,7 +11,9 @@ release notes are hand-curated on top in GitHub Releases.
   the cursor, applying exactly the reviewed hunk bytes to the git index —
   never the working tree — then reloading and re-anchoring the cursor.
   Stale hunks, binary files, renames, and non-git sources report in the
-  status bar instead of failing.
+  status bar instead of failing. The sidebar marks files that have staged
+  content with a dot, so partial staging is visible at a glance; the marker
+  refreshes as you stage and unstage.
 
 ## [0.1.0-rc.1] - 2026-07-03
 

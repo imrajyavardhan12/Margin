@@ -3,10 +3,10 @@ source: crates/margin-tui/tests/ui_snapshots.rs
 expression: "render(&mut state, 80, 24)"
 ---
  FILES (4)                ▌M src/app.rs  +4 -2
-▌M src/app.rs        +4 -2 @@ -1,5 +1,6 @@ fn setup()
- A docs/NOTES.md     +2 -0    1    1  use std::env;
- M assets/logo.png┌ margin — keys ───────────────────────────┐
- R new/path.txt   │                                          │
+▌ M src/app.rs       +4 -2 @@ -1,5 +1,6 @@ fn setup()
+  A docs/NOTES.md    +2 -0    1    1  use std::env;
+  M assets/logo.pn┌ margin — keys ───────────────────────────┐
+  R new/path.txt  │                                          │
                   │  j / k            move down / up         │
                   │  J / K            next / previous hunk   │
                   │  ] / [            next / previous file   │ar("PROFILE");

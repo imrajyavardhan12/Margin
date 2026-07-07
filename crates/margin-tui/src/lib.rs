@@ -32,6 +32,8 @@ mod runtime;
 pub mod theme;
 pub mod view;
 
-pub use app::{update, AppState, Command, CommandExecutor, CommandResult, HunkAction, Msg};
+pub use app::{
+    update, AppState, Command, CommandExecutor, CommandResult, HunkAction, Msg, StagedFiles,
+};
 pub use runtime::run;
 pub use view::view as render_view;

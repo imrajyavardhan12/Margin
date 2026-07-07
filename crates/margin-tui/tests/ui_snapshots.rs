@@ -7,7 +7,9 @@
 
 use insta::assert_snapshot;
 use margin_core::parse_unified;
-use margin_tui::{render_view, update, AppState, Command, CommandResult, HunkAction, Msg};
+use margin_tui::{
+    render_view, update, AppState, Command, CommandResult, HunkAction, Msg, StagedFiles,
+};
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::Terminal;
@@ -314,22 +316,62 @@ fn stage_request_result_and_clear_flow() {
     assert!(parse_unified(&patch).warnings.is_empty());
 
     let reloaded = state.changeset.clone();
+    // The runtime hands back a fresh index-vs-HEAD summary. Staging one hunk
+    // of src/app.rs puts only that file in the index, so only it is marked.
+    let staged = StagedFiles::from_staged_changeset(&margin_core::Changeset {
+        files: vec![reloaded.files[0].clone()],
+    });
+    assert!(
+        staged.is_staged(&state.changeset.files[0]),
+        "the reloaded summary should mark the staged file"
+    );
     assert_eq!(
         update(
             &mut state,
             Msg::CommandFinished(CommandResult::Applied {
                 action,
                 changeset: reloaded,
+                staged,
             }),
         ),
         None
     );
     let frame = render(&mut state, 80, 24);
     assert!(frame.contains("hunk staged"), "{frame}");
+    // The staged dot rides in the sidebar's reserved status column.
+    assert!(
+        frame.contains('\u{25cf}'),
+        "staged indicator must show: {frame}"
+    );
     assert_snapshot!(frame);
 
     update(&mut state, Msg::CursorDown);
     assert!(!render(&mut state, 80, 24).contains("hunk staged"));
+}
+
+/// The sidebar marks files with staged content and leaves the rest alone.
+#[test]
+fn sidebar_marks_staged_files() {
+    let mut state = sample_state();
+    // Pretend docs/NOTES.md has been staged (index vs HEAD). The `diff --git`
+    // header puts the parser in git-prefix mode so the path strips to
+    // `docs/NOTES.md`, matching the worktree file it annotates.
+    let staged_patch = b"diff --git a/docs/NOTES.md b/docs/NOTES.md\n\
+        --- a/docs/NOTES.md\n+++ b/docs/NOTES.md\n@@ -1,1 +1,1 @@\n-old\n+new\n";
+    state.staged = StagedFiles::from_staged_changeset(&parse_unified(staged_patch).changeset);
+
+    let frame = render(&mut state, 80, 24);
+    assert!(
+        frame.contains('\u{25cf}'),
+        "a staged file must show the indicator: {frame}"
+    );
+    // Exactly one file is staged, so exactly one dot appears.
+    assert_eq!(
+        frame.matches('\u{25cf}').count(),
+        1,
+        "only the staged file is marked: {frame}"
+    );
+    assert_snapshot!(frame);
 }
 
 #[test]

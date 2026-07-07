@@ -3,10 +3,10 @@ source: crates/margin-tui/tests/ui_snapshots.rs
 expression: frame
 ---
  FILES (4)                      ▌M src/app.rs  +4 -2
-▌M src/app.rs              +4 -2 @@ -1,5 +1,6 @@ fn setup()
- A docs/NOTES.md           +2 -0    1  use std::env;                                            │   1  use std::env;
- M assets/logo.png         +0 -0    2                                                           │   2
- R new/path.txt            +0 -0    3 -fn setup() {                                             │   3 +fn setup() {
+▌ M src/app.rs             +4 -2 @@ -1,5 +1,6 @@ fn setup()
+  A docs/NOTES.md          +2 -0    1  use std::env;                                            │   1  use std::env;
+  M assets/logo.png        +0 -0    2                                                           │   2
+  R new/path.txt           +0 -0    3 -fn setup() {                                             │   3 +fn setup() {
                                     4 -    init("defaults");                                    │   4 +    let profile = env::var("PROFILE");
                                                                                                 │   5 +    init(profile.as_deref().unwrap_or("defaults"));
                                     5  }                                                        │   6  }

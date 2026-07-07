@@ -243,7 +243,12 @@ fn run_patch(input: &str, session: &Session) -> ExitCode {
         repo: None,
         source: None,
     };
-    let code = show(outcome.changeset, session, &mut executor);
+    let code = show(
+        outcome.changeset,
+        session,
+        margin_tui::StagedFiles::default(),
+        &mut executor,
+    );
     report_warnings(&outcome.warnings);
     code
 }
@@ -265,7 +270,11 @@ impl margin_tui::CommandExecutor for VcsExecutor<'_> {
         };
         match apply_patch_to_index(repo, &patch) {
             Ok(()) => match source.load() {
-                Ok(changeset) => CommandResult::Applied { action, changeset },
+                Ok(changeset) => CommandResult::Applied {
+                    action,
+                    changeset,
+                    staged: load_staged(repo),
+                },
                 Err(err) => CommandResult::Failed(format!("applied, but reload failed: {err}")),
             },
             Err(StageError::Stale(_)) => CommandResult::Stale,
@@ -281,11 +290,12 @@ fn run_source(
 ) -> ExitCode {
     match source.load() {
         Ok(changeset) => {
+            let staged = staging_repo.as_deref().map(load_staged).unwrap_or_default();
             let mut executor = VcsExecutor {
                 repo: staging_repo,
                 source: Some(source),
             };
-            show(changeset, session, &mut executor)
+            show(changeset, session, staged, &mut executor)
         }
         Err(err) => {
             eprintln!("margin: {err}");
@@ -294,10 +304,22 @@ fn run_source(
     }
 }
 
+/// The sidebar's staged summary: the index-vs-HEAD diff reduced to the set
+/// of staged paths. Best-effort — the indicator is advisory, so a failure
+/// (unborn branch, transient git error) simply yields an empty summary
+/// rather than blocking the review.
+fn load_staged(repo: &Path) -> margin_tui::StagedFiles {
+    GitStaged::new(repo.to_path_buf())
+        .load()
+        .map(|changeset| margin_tui::StagedFiles::from_staged_changeset(&changeset))
+        .unwrap_or_default()
+}
+
 /// Render a changeset: TUI on a terminal, plain summary when piped.
 fn show(
     changeset: Changeset,
     session: &Session,
+    staged: margin_tui::StagedFiles,
     executor: &mut dyn margin_tui::CommandExecutor,
 ) -> ExitCode {
     if !std::io::stdout().is_terminal() {
@@ -307,6 +329,7 @@ fn show(
     let mut state = AppState::new(changeset);
     state.apply_theme(session.theme.clone());
     state.set_layout_mode(session.config.layout.into());
+    state.staged = staged;
     match margin_tui::run(&mut state, executor) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
