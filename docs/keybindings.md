@@ -31,6 +31,12 @@ The layout defaults to `auto`: side-by-side when the diff pane is at least
 120 columns wide, unified below that. The status bar shows `[split]` when
 side-by-side is active, and `[wrap]` when line wrap is on.
 
+## Act on the diff
+
+| Key | Action |
+|---|---|
+| `s` / `u` | stage / unstage the hunk under the cursor (index-only; ADR-0013). Refusals and stale hunks report in the status bar. Available in git worktree and `--staged` reviews. |
+
 ## Session
 
 | Key | Action |
@@ -42,6 +48,5 @@ side-by-side is active, and `[wrap]` when line wrap is on.
 | Key | Planned action | Issue |
 |---|---|---|
 | `m` | mark file viewed | M2 |
-| `s` / `u` | stage / unstage hunk | #10 |
 | `x` | discard hunk (typed confirm) | #11 |
 | `r` | reload | #12 |

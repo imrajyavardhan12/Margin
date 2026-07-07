@@ -5,6 +5,14 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+### Added
+
+- Act on the diff (issue #10): `s` stages and `u` unstages the hunk under
+  the cursor, applying exactly the reviewed hunk bytes to the git index —
+  never the working tree — then reloading and re-anchoring the cursor.
+  Stale hunks, binary files, renames, and non-git sources report in the
+  status bar instead of failing.
+
 ## [0.1.0-rc.1] - 2026-07-03
 
 ### Added

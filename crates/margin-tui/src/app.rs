@@ -4,7 +4,9 @@
 //! changes (ADR-0003). Side effects do not exist here — when reload/staging
 //! arrive, they return as commands executed by the runtime shell.
 
-use margin_core::{Changeset, Hunk, LineKind};
+use margin_core::{
+    render_hunk_patch, render_reversed_hunk_patch, Changeset, Hunk, LineKind, RenderRefusal,
+};
 
 /// How the diff pane lays out changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,10 +107,62 @@ pub enum InputMode {
     Picker,
 }
 
+/// Which index write the selected hunk should request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HunkAction {
+    Stage,
+    Unstage,
+}
+
+impl HunkAction {
+    pub fn past_tense(self) -> &'static str {
+        match self {
+            HunkAction::Stage => "staged",
+            HunkAction::Unstage => "unstaged",
+        }
+    }
+}
+
+/// Data-only effects returned by [`update`]; the runtime executes them
+/// (ADR-0003: no I/O in the core, ADR-0013: writes are explicit).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Command {
+    /// Apply the pre-rendered single-hunk patch to the index.
+    ApplyHunk { action: HunkAction, patch: Vec<u8> },
+}
+
+/// Outcome of a command, fed back into [`update`] as
+/// [`Msg::CommandFinished`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandResult {
+    /// The write succeeded; here is the reloaded changeset.
+    Applied {
+        action: HunkAction,
+        changeset: Changeset,
+    },
+    /// The hunk no longer applies — the world moved since load.
+    Stale,
+    /// The active source cannot stage (patch file, stdin, two-files).
+    Unsupported(&'static str),
+    Failed(String),
+}
+
+/// Effect boundary for the runtime shell (same dependency inversion as
+/// `DiffSource`): the binary implements this over margin-vcs, so
+/// margin-tui never depends on it.
+pub trait CommandExecutor {
+    fn execute(&mut self, command: Command) -> CommandResult;
+}
+
 /// Every possible interaction. Keymaps translate key events into these;
 /// tests drive the app with them directly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
+    /// `s` / `u`: request an index write for the hunk under the cursor.
+    StageHunk,
+    UnstageHunk,
+    /// The runtime reporting a command's outcome.
+    CommandFinished(CommandResult),
     CursorDown,
     CursorUp,
     NextHunk,
@@ -169,6 +223,9 @@ pub struct AppState {
     pub theme: crate::theme::Theme,
     /// Memoizing, budgeted syntax/emphasis cache (ADR-0006).
     pub highlight: crate::highlight::HighlightCache,
+    /// One-shot feedback line (command outcomes, refusals); cleared by
+    /// the next keypress.
+    pub status_message: Option<String>,
     pub search: Option<SearchState>,
     pub picker: Option<PickerState>,
 }
@@ -190,6 +247,7 @@ impl AppState {
             viewport: (80, 24),
             theme: crate::theme::Theme::default(),
             highlight: crate::highlight::HighlightCache::default(),
+            status_message: None,
             search: None,
             picker: None,
         };
@@ -394,6 +452,70 @@ impl AppState {
         crate::view::wrap_count(&text, budget, self.content_height().max(1) + 1)
     }
 
+    /// Build the index-write command for the hunk under the cursor, or
+    /// explain in the status bar why there isn't one (ADR-0013: refusals
+    /// are messages, not errors).
+    fn request_hunk_apply(&mut self, action: HunkAction) -> Option<Command> {
+        let located = match self.rows.get(self.cursor) {
+            Some(
+                &Row::HunkHeader { file, hunk }
+                | &Row::Line { file, hunk, .. }
+                | &Row::Split { file, hunk, .. },
+            ) => self
+                .changeset
+                .files
+                .get(file)
+                .and_then(|f| f.hunks.get(hunk).map(|h| (f, h))),
+            _ => None,
+        };
+        let Some((file, hunk)) = located else {
+            self.status_message = Some("no hunk under the cursor".into());
+            return None;
+        };
+        let rendered = match action {
+            HunkAction::Stage => render_hunk_patch(file, hunk),
+            HunkAction::Unstage => render_reversed_hunk_patch(file, hunk),
+        };
+        match rendered {
+            Ok(patch) => Some(Command::ApplyHunk { action, patch }),
+            Err(refusal) => {
+                self.status_message = Some(
+                    match refusal {
+                        RenderRefusal::Binary => "cannot stage binary files",
+                        RenderRefusal::Rename => "cannot stage renames yet",
+                        RenderRefusal::UnsafePath => "cannot stage: path needs git quoting",
+                    }
+                    .into(),
+                );
+                None
+            }
+        }
+    }
+
+    /// Absorb a command outcome: reload and re-anchor on success (the
+    /// highlight cache is index-keyed and must rebuild), report otherwise.
+    fn finish_command(&mut self, result: CommandResult) {
+        match result {
+            CommandResult::Applied { action, changeset } => {
+                let anchor = self.rows.get(self.cursor).copied();
+                self.changeset = changeset;
+                self.rows = build_rows(&self.changeset, self.split_active);
+                self.cursor = anchor.map_or(0, |a| locate(&self.rows, a));
+                self.clamp_cursor();
+                self.highlight = crate::highlight::HighlightCache::new(self.theme.syntax_theme);
+                if let Some(search) = &mut self.search {
+                    recompute_matches(search, &self.rows, &self.changeset);
+                }
+                self.status_message = Some(format!("hunk {}", action.past_tense()));
+            }
+            CommandResult::Stale => {
+                self.status_message = Some("hunk no longer applies — it changed since load".into());
+            }
+            CommandResult::Unsupported(why) => self.status_message = Some(why.into()),
+            CommandResult::Failed(err) => self.status_message = Some(format!("failed: {err}")),
+        }
+    }
+
     fn ensure_cursor_visible(&mut self) {
         let height = self.content_height().max(1);
         if self.cursor < self.scroll {
@@ -445,11 +567,21 @@ impl AppState {
     }
 }
 
-/// The only place state changes (ADR-0003).
-pub fn update(state: &mut AppState, msg: Msg) {
+/// The only place state changes (ADR-0003). Returns the side effect the
+/// runtime should execute, if the message requested one.
+pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
     let pending_g = std::mem::take(&mut state.pending_g);
+    // One-shot feedback: the next user interaction clears the previous
+    // message. Resize and command results are not interactions.
+    if !matches!(msg, Msg::CommandFinished(_) | Msg::Resize(..)) {
+        state.status_message = None;
+    }
+    let mut command = None;
 
     match msg {
+        Msg::StageHunk => command = state.request_hunk_apply(HunkAction::Stage),
+        Msg::UnstageHunk => command = state.request_hunk_apply(HunkAction::Unstage),
+        Msg::CommandFinished(result) => state.finish_command(result),
         Msg::CursorDown => {
             state.cursor = state.cursor.saturating_add(1);
             state.clamp_cursor();
@@ -595,6 +727,7 @@ pub fn update(state: &mut AppState, msg: Msg) {
     }
 
     state.ensure_cursor_visible();
+    command
 }
 
 /// Recompile the query (smart-case: case-insensitive unless it contains an

@@ -12,12 +12,13 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use crate::app::{update, AppState, Msg};
+use crate::app::{update, AppState, CommandExecutor, Msg};
 use crate::keymap::msg_for_key;
 use crate::view::view;
 
-/// Run the review session to completion (user quit) or error.
-pub fn run(state: &mut AppState) -> io::Result<()> {
+/// Run the review session to completion (user quit) or error. The
+/// executor performs any side effects `update` requests (ADR-0013).
+pub fn run(state: &mut AppState, executor: &mut dyn CommandExecutor) -> io::Result<()> {
     install_panic_hook();
     enable_raw_mode()?;
     crossterm::execute!(io::stdout(), EnterAlternateScreen)?;
@@ -26,14 +27,24 @@ pub fn run(state: &mut AppState) -> io::Result<()> {
     let size = terminal.size()?;
     update(state, Msg::Resize(size.width, size.height));
 
-    let result = event_loop(&mut terminal, state);
+    let result = event_loop(&mut terminal, state, executor);
     restore_terminal()?;
     result
+}
+
+/// One message through the core; any requested effect executes and its
+/// outcome feeds straight back in as a message (the command loop).
+fn dispatch(state: &mut AppState, msg: Msg, executor: &mut dyn CommandExecutor) {
+    if let Some(command) = update(state, msg) {
+        let result = executor.execute(command);
+        update(state, Msg::CommandFinished(result));
+    }
 }
 
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &mut AppState,
+    executor: &mut dyn CommandExecutor,
 ) -> io::Result<()> {
     loop {
         terminal.draw(|frame| view(state, frame))?;
@@ -57,10 +68,12 @@ fn event_loop(
             // acting on those would double every keystroke.
             Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                 if let Some(msg) = msg_for_key(key, state.input_mode()) {
-                    update(state, msg);
+                    dispatch(state, msg, executor);
                 }
             }
-            Some(Event::Resize(width, height)) => update(state, Msg::Resize(width, height)),
+            Some(Event::Resize(width, height)) => {
+                dispatch(state, Msg::Resize(width, height), executor)
+            }
             _ => {}
         }
     }
