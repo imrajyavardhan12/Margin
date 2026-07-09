@@ -140,6 +140,7 @@ fn main() -> ExitCode {
                 &GitShow::new(cwd, rev.unwrap_or_else(|| "HEAD".into())),
                 &session,
                 None,
+                false,
             )
         }
         Command::Patch { input } => run_patch(input.as_deref().unwrap_or("-"), &session),
@@ -157,32 +158,39 @@ fn run_diff(args: DiffArgs, session: &Session) -> ExitCode {
         return ExitCode::from(2);
     }
     if args.staged {
-        return run_source(&GitStaged::new(cwd.clone()), session, Some(cwd));
+        // Staging commands stay meaningful (`u` unstages from the index),
+        // but the staged indicator does not: everything shown is staged.
+        return run_source(&GitStaged::new(cwd.clone()), session, Some(cwd), false);
     }
 
     match args.targets.as_slice() {
         [] => {
             let mut source = GitWorktree::new(cwd.clone());
             source.include_untracked = session.config.include_untracked;
-            run_source(&source, session, Some(cwd))
+            run_source(&source, session, Some(cwd), true)
         }
         [single] => {
             if let Some((from, to)) = split_range(single) {
-                run_source(&GitRevRange::new(cwd, from, to), session, None)
+                run_source(&GitRevRange::new(cwd, from, to), session, None, false)
             } else {
                 // `margin diff <rev>`: working tree vs that revision —
                 // git's semantics.
                 let mut source = GitWorktree::new(cwd.clone());
                 source.include_untracked = session.config.include_untracked;
                 source.base = Some(single.clone());
-                run_source(&source, session, Some(cwd))
+                run_source(&source, session, Some(cwd), true)
             }
         }
         [a, b] => {
             if Path::new(a).is_file() && Path::new(b).is_file() {
-                run_source(&TwoFiles::new(a, b), session, None)
+                run_source(&TwoFiles::new(a, b), session, None, false)
             } else {
-                run_source(&GitRevRange::new(cwd, a.clone(), b.clone()), session, None)
+                run_source(
+                    &GitRevRange::new(cwd, a.clone(), b.clone()),
+                    session,
+                    None,
+                    false,
+                )
             }
         }
         _ => unreachable!("clap caps targets at 2"),
@@ -242,13 +250,9 @@ fn run_patch(input: &str, session: &Session) -> ExitCode {
     let mut executor = VcsExecutor {
         repo: None,
         source: None,
+        staged_indicator: false,
     };
-    let code = show(
-        outcome.changeset,
-        session,
-        margin_tui::StagedFiles::default(),
-        &mut executor,
-    );
+    let code = show(outcome.changeset, session, None, &mut executor);
     report_warnings(&outcome.warnings);
     code
 }
@@ -256,29 +260,63 @@ fn run_patch(input: &str, session: &Session) -> ExitCode {
 /// Executes TUI commands against the real repository (ADR-0013).
 /// `repo` is Some only for index-relative reviews (worktree/--staged),
 /// where staging a displayed hunk is meaningful; everything else refuses.
+/// `staged_indicator` is true only for worktree reviews — the one place
+/// the sidebar's staged dots carry information (`--staged` shows staged
+/// content by definition, other sources have no index in play).
 struct VcsExecutor<'a> {
     repo: Option<PathBuf>,
     source: Option<&'a dyn DiffSource>,
+    staged_indicator: bool,
+}
+
+impl VcsExecutor<'_> {
+    /// The sidebar's staged summary, when it applies to this review
+    /// (`None` otherwise — see `margin_tui::StagedFiles`).
+    fn staged_summary(&self) -> Option<margin_tui::StagedFiles> {
+        if !self.staged_indicator {
+            return None;
+        }
+        self.repo.as_deref().map(load_staged)
+    }
 }
 
 impl margin_tui::CommandExecutor for VcsExecutor<'_> {
     fn execute(&mut self, command: margin_tui::Command) -> margin_tui::CommandResult {
         use margin_tui::CommandResult;
-        let margin_tui::Command::ApplyHunk { action, patch } = command;
-        let (Some(repo), Some(source)) = (&self.repo, self.source) else {
-            return CommandResult::Unsupported("staging needs a git worktree or --staged review");
-        };
-        match apply_patch_to_index(repo, &patch) {
-            Ok(()) => match source.load() {
-                Ok(changeset) => CommandResult::Applied {
-                    action,
-                    changeset,
-                    staged: load_staged(repo),
-                },
-                Err(err) => CommandResult::Failed(format!("applied, but reload failed: {err}")),
-            },
-            Err(StageError::Stale(_)) => CommandResult::Stale,
-            Err(err) => CommandResult::Failed(err.to_string()),
+        match command {
+            margin_tui::Command::ApplyHunk { action, patch } => {
+                let (Some(repo), Some(source)) = (&self.repo, self.source) else {
+                    return CommandResult::Unsupported(
+                        "staging needs a git worktree or --staged review",
+                    );
+                };
+                match apply_patch_to_index(repo, &patch) {
+                    Ok(()) => match source.load() {
+                        Ok(changeset) => CommandResult::Applied {
+                            action,
+                            changeset,
+                            staged: self.staged_summary(),
+                        },
+                        Err(err) => {
+                            CommandResult::Failed(format!("applied, but reload failed: {err}"))
+                        }
+                    },
+                    Err(StageError::Stale(_)) => CommandResult::Stale(action),
+                    Err(err) => CommandResult::Failed(err.to_string()),
+                }
+            }
+            margin_tui::Command::Reload => {
+                let Some(source) = self.source else {
+                    return CommandResult::Unsupported("cannot reload patch or piped input");
+                };
+                match source.load() {
+                    Ok(changeset) => CommandResult::Reloaded {
+                        changeset,
+                        staged: self.staged_summary(),
+                    },
+                    Err(err) => CommandResult::Failed(format!("reload failed: {err}")),
+                }
+            }
         }
     }
 }
@@ -287,14 +325,16 @@ fn run_source(
     source: &dyn DiffSource,
     session: &Session,
     staging_repo: Option<PathBuf>,
+    staged_indicator: bool,
 ) -> ExitCode {
     match source.load() {
         Ok(changeset) => {
-            let staged = staging_repo.as_deref().map(load_staged).unwrap_or_default();
             let mut executor = VcsExecutor {
                 repo: staging_repo,
                 source: Some(source),
+                staged_indicator,
             };
+            let staged = executor.staged_summary();
             show(changeset, session, staged, &mut executor)
         }
         Err(err) => {
@@ -319,7 +359,7 @@ fn load_staged(repo: &Path) -> margin_tui::StagedFiles {
 fn show(
     changeset: Changeset,
     session: &Session,
-    staged: margin_tui::StagedFiles,
+    staged: Option<margin_tui::StagedFiles>,
     executor: &mut dyn margin_tui::CommandExecutor,
 ) -> ExitCode {
     if !std::io::stdout().is_terminal() {

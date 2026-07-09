@@ -35,7 +35,11 @@ side-by-side is active, and `[wrap]` when line wrap is on.
 
 | Key | Action |
 |---|---|
-| `s` / `u` | stage / unstage the hunk under the cursor (index-only; ADR-0013). Refusals and stale hunks report in the status bar. Available in git worktree and `--staged` reviews. |
+| `s` / `u` | stage / unstage the hunk under the cursor (index-only; ADR-0013). Refusals report in the status bar. Available in git worktree and `--staged` reviews. |
+| `r` | reload the diff from its source (also refreshes the sidebar's staged markers) |
+
+In worktree reviews the sidebar marks files that have staged content with a
+`●` dot, so partial staging is visible at a glance.
 
 ## Session
 
@@ -49,4 +53,3 @@ side-by-side is active, and `[wrap]` when line wrap is on.
 |---|---|---|
 | `m` | mark file viewed | M2 |
 | `x` | discard hunk (typed confirm) | #11 |
-| `r` | reload | #12 |

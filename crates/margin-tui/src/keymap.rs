@@ -40,6 +40,7 @@ fn normal(key: KeyEvent, ctrl: bool) -> Option<Msg> {
         KeyCode::Char('f') => Some(Msg::PickerStart),
         KeyCode::Char('s') => Some(Msg::StageHunk),
         KeyCode::Char('u') => Some(Msg::UnstageHunk),
+        KeyCode::Char('r') => Some(Msg::Reload),
         KeyCode::Char('v') => Some(Msg::ToggleLayout),
         KeyCode::Char('w') => Some(Msg::ToggleWrap),
         KeyCode::Char('b') => Some(Msg::ToggleSidebar),
@@ -104,6 +105,15 @@ mod tests {
             normal(KeyCode::Char('d'), KeyModifiers::NONE),
             None,
             "plain d is reserved (discard arrives in v0.2 behind confirm)"
+        );
+        assert_eq!(
+            normal(KeyCode::Char('r'), KeyModifiers::NONE),
+            Some(Msg::Reload)
+        );
+        assert_eq!(
+            normal(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            Some(Msg::HalfPageUp),
+            "Ctrl-u pages, plain u unstages"
         );
         assert_eq!(
             normal(KeyCode::Char('/'), KeyModifiers::NONE),
