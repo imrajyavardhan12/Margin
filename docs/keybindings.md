@@ -36,6 +36,7 @@ side-by-side is active, and `[wrap]` when line wrap is on.
 | Key | Action |
 |---|---|
 | `s` / `u` | stage / unstage the hunk under the cursor (index-only; ADR-0013). Refusals report in the status bar. Available in git worktree and `--staged` reviews. |
+| `x` | discard the hunk from the working tree (ADR-0014) — Margin's only destructive action. Opens a prompt; only typing `yes` and Enter applies it, Esc cancels. A backup patch lands in `.git/margin/trash/` first (`margin undo` restores; `discard_trash = false` opts out). Worktree reviews only. |
 | `r` | reload the diff from its source (also refreshes the sidebar's staged markers) |
 
 In worktree reviews the sidebar marks files that have staged content with a
@@ -52,4 +53,3 @@ In worktree reviews the sidebar marks files that have staged content with a
 | Key | Planned action | Issue |
 |---|---|---|
 | `m` | mark file viewed | M2 |
-| `x` | discard hunk (typed confirm) | #11 |

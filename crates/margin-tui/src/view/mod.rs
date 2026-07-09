@@ -77,6 +77,21 @@ pub fn view(state: &AppState, frame: &mut Frame) {
 }
 
 fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
+    // The discard confirmation owns the line while open: it names the
+    // target and echoes the typed word (ADR-0014). The input is filtered
+    // of control characters at update() time; the label is display_path().
+    if let Some(confirm) = &state.confirm {
+        let line = format!(
+            " discard hunk in {}? type yes \u{23ce} to confirm, Esc cancels  {}\u{258c}",
+            confirm.label, confirm.input
+        );
+        frame.render_widget(
+            Paragraph::new(TLine::from(line)).style(state.theme.status_bar),
+            area,
+        );
+        return;
+    }
+
     // The search bar takes over the status line while typing.
     if let Some(search) = &state.search {
         if search.typing {

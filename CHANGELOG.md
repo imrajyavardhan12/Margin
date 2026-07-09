@@ -21,6 +21,14 @@ release notes are hand-curated on top in GitHub Releases.
 - Staging feedback tells the truth about the common misfires: staging an
   already-staged hunk says so (instead of "changed since load"), and
   unstaging a file with nothing staged refuses up front.
+- Discard (issue #11): `x` removes the hunk under the cursor from the
+  working tree — Margin's only destructive action, so it is guarded twice
+  (ADR-0014): a prompt that only typed `yes` + Enter confirms, and a
+  backup patch written to `.git/margin/trash/` **before** anything is
+  applied. `margin undo` restores the most recent discard;
+  `discard_trash = false` (user config only) opts out of backups. Stale
+  hunks refuse cleanly; the index is never touched, so staged copies
+  survive a discard exactly as with `git restore`.
 
 ## [0.1.0-rc.1] - 2026-07-03
 

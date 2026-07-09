@@ -15,6 +15,7 @@ pub fn msg_for_key(key: KeyEvent, mode: InputMode) -> Option<Msg> {
         InputMode::Normal => normal(key, ctrl),
         InputMode::Search => search(key),
         InputMode::Picker => picker(key, ctrl),
+        InputMode::Confirm => confirm(key),
     }
 }
 
@@ -40,6 +41,7 @@ fn normal(key: KeyEvent, ctrl: bool) -> Option<Msg> {
         KeyCode::Char('f') => Some(Msg::PickerStart),
         KeyCode::Char('s') => Some(Msg::StageHunk),
         KeyCode::Char('u') => Some(Msg::UnstageHunk),
+        KeyCode::Char('x') => Some(Msg::DiscardHunk),
         KeyCode::Char('r') => Some(Msg::Reload),
         KeyCode::Char('v') => Some(Msg::ToggleLayout),
         KeyCode::Char('w') => Some(Msg::ToggleWrap),
@@ -56,6 +58,19 @@ fn search(key: KeyEvent) -> Option<Msg> {
         KeyCode::Enter => Some(Msg::SearchConfirm),
         KeyCode::Backspace => Some(Msg::SearchBackspace),
         KeyCode::Char(c) => Some(Msg::SearchInput(c)),
+        _ => None,
+    }
+}
+
+/// The `x` typed-confirmation prompt: type the word, Enter submits,
+/// Esc cancels. Deliberately no shortcuts — one keystroke must never
+/// destroy (ADR-0014).
+fn confirm(key: KeyEvent) -> Option<Msg> {
+    match key.code {
+        KeyCode::Esc => Some(Msg::ConfirmCancel),
+        KeyCode::Enter => Some(Msg::ConfirmSubmit),
+        KeyCode::Backspace => Some(Msg::ConfirmBackspace),
+        KeyCode::Char(c) => Some(Msg::ConfirmInput(c)),
         _ => None,
     }
 }
@@ -111,6 +126,10 @@ mod tests {
             Some(Msg::Reload)
         );
         assert_eq!(
+            normal(KeyCode::Char('x'), KeyModifiers::NONE),
+            Some(Msg::DiscardHunk)
+        );
+        assert_eq!(
             normal(KeyCode::Char('u'), KeyModifiers::CONTROL),
             Some(Msg::HalfPageUp),
             "Ctrl-u pages, plain u unstages"
@@ -136,12 +155,29 @@ mod tests {
             Some(Msg::SearchInput('q'))
         );
         // ...but Ctrl-C quits from every mode.
-        for mode in [InputMode::Normal, InputMode::Search, InputMode::Picker] {
+        for mode in [
+            InputMode::Normal,
+            InputMode::Search,
+            InputMode::Picker,
+            InputMode::Confirm,
+        ] {
             assert_eq!(
                 msg_for_key(key(KeyCode::Char('c'), KeyModifiers::CONTROL), mode),
                 Some(Msg::Quit)
             );
         }
+        // The confirm prompt captures typing; q types, Esc cancels.
+        assert_eq!(
+            msg_for_key(
+                key(KeyCode::Char('q'), KeyModifiers::NONE),
+                InputMode::Confirm
+            ),
+            Some(Msg::ConfirmInput('q'))
+        );
+        assert_eq!(
+            msg_for_key(key(KeyCode::Esc, KeyModifiers::NONE), InputMode::Confirm),
+            Some(Msg::ConfirmCancel)
+        );
         assert_eq!(
             msg_for_key(
                 key(KeyCode::Char('n'), KeyModifiers::CONTROL),

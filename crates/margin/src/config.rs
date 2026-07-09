@@ -43,6 +43,10 @@ struct UserFile {
     theme: Option<String>,
     layout: Option<LayoutChoice>,
     include_untracked: Option<bool>,
+    /// Back up discarded hunks to `.git/margin/trash/` (ADR-0014).
+    /// Deliberately absent from [`RepoFile`]: a checked-out repository
+    /// must never be able to disable backups.
+    discard_trash: Option<bool>,
 }
 
 /// The repo-local `.margin.toml`: display options only, by schema (ADR-0008).
@@ -59,6 +63,7 @@ pub struct Config {
     pub theme: String,
     pub layout: LayoutChoice,
     pub include_untracked: bool,
+    pub discard_trash: bool,
 }
 
 impl Default for Config {
@@ -67,6 +72,7 @@ impl Default for Config {
             theme: "ledger".into(),
             layout: LayoutChoice::Auto,
             include_untracked: true,
+            discard_trash: true,
         }
     }
 }
@@ -89,6 +95,7 @@ impl Config {
                 merge(&mut config.theme, user.theme);
                 merge_opt(&mut config.layout, user.layout);
                 merge_opt(&mut config.include_untracked, user.include_untracked);
+                merge_opt(&mut config.discard_trash, user.discard_trash);
             }
         }
         if let Some(dir) = repo_dir {
@@ -115,8 +122,8 @@ impl Config {
             LayoutChoice::Split => "split",
         };
         format!(
-            "theme = \"{}\"\nlayout = \"{}\"\ninclude_untracked = {}\n",
-            self.theme, layout, self.include_untracked
+            "theme = \"{}\"\nlayout = \"{}\"\ninclude_untracked = {}\ndiscard_trash = {}\n",
+            self.theme, layout, self.include_untracked, self.discard_trash
         )
     }
 }
@@ -254,6 +261,24 @@ mod tests {
             err.contains("include_untracked"),
             "repo config must be display-only (ADR-0008): {err}"
         );
+    }
+
+    #[test]
+    fn repo_config_cannot_disable_discard_backups() {
+        // ADR-0014: a hostile repository must never silently turn off the
+        // trash — `discard_trash` is a user-config-only key.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".margin.toml"), "discard_trash = false\n").unwrap();
+        let err = Config::load(None, Some(dir.path()), None, None).unwrap_err();
+        assert!(err.contains("discard_trash"), "{err}");
+
+        // And from the user file it is honored.
+        let user = dir.path().join("config.toml");
+        std::fs::write(&user, "discard_trash = false\n").unwrap();
+        let config = Config::load(Some(&user), None, None, None).unwrap();
+        assert!(!config.discard_trash);
+        assert!(Config::default().discard_trash, "backups default on");
     }
 
     #[test]

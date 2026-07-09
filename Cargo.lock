@@ -1088,6 +1088,7 @@ name = "margin"
 version = "0.1.0-rc.1"
 dependencies = [
  "clap",
+ "git2",
  "margin-core",
  "margin-tui",
  "margin-vcs",
