@@ -236,3 +236,82 @@ fn version_flag_works() {
     assert_eq!(out.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&out.stdout).starts_with("margin "));
 }
+
+/// Build a repo with one committed file so `margin undo` has an index
+/// and worktree to operate on.
+fn undo_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
+    let mut config = repo.config().unwrap();
+    config.set_str("user.name", "Test").unwrap();
+    config.set_str("user.email", "test@example.com").unwrap();
+    config.set_bool("core.autocrlf", false).unwrap();
+    std::fs::write(dir.path().join("f.txt"), "one\ntwo\n").unwrap();
+    let mut index = repo.index().unwrap();
+    index.add_path(std::path::Path::new("f.txt")).unwrap();
+    index.write().unwrap();
+    let tree_id = index.write_tree().unwrap();
+    let tree = repo.find_tree(tree_id).unwrap();
+    let sig = repo.signature().unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "base", &tree, &[])
+        .unwrap();
+    dir
+}
+
+/// `margin undo` restores the newest trash entry and consumes it;
+/// empty trash and non-repos exit 2 with the reason (ADR-0007/0014).
+#[test]
+fn undo_restores_the_seeded_trash_entry() {
+    let dir = undo_repo();
+
+    // Empty trash: exit 2, honest message.
+    let out = margin()
+        .current_dir(dir.path())
+        .arg("undo")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("nothing to undo"));
+
+    // Seed a trash entry as a discard would have written it: the forward
+    // patch of an edit whose reverse has already been applied (i.e. the
+    // worktree is at HEAD and the patch re-applies the edit).
+    let trash = dir.path().join(".git/margin/trash");
+    std::fs::create_dir_all(&trash).unwrap();
+    let patch = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n\
+                 @@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
+    std::fs::write(trash.join("0000000000001.patch"), patch).unwrap();
+
+    let out = margin()
+        .current_dir(dir.path())
+        .arg("undo")
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("restored"));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("f.txt")).unwrap(),
+        "one\nTWO\n",
+        "the discarded edit is back"
+    );
+    assert!(
+        std::fs::read_dir(&trash).unwrap().next().is_none(),
+        "the entry is consumed"
+    );
+}
+
+#[test]
+fn undo_outside_a_repo_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = margin()
+        .current_dir(dir.path())
+        .arg("undo")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+}

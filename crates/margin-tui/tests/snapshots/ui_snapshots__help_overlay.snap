@@ -15,14 +15,14 @@ expression: "render(&mut state, 80, 24)"
                   │  n / N            next / previous match  │
                   │  f                jump to file (fuzzy)   │
                   │  s / u            stage / unstage hunk   │
+                  │  x                discard hunk (typed con│
                   │  r                reload the diff        │
                   │  v                toggle unified / side-b│
                   │  w                toggle line wrap       │
                   │  b                toggle sidebar         │
                   │  ?                toggle this help       │
                   │  q                quit                   │
-                  │                                          │
-                  └──────────────────────────────────────────┘hown
-                           R old/path.txt → new/path.txt  +0 -0
+                  │                                          │hown
+                  └──────────────────────────────────────────┘0
                                  └ renamed without content changes
  src/app.rs  1/23

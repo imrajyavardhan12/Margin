@@ -439,6 +439,104 @@ fn unstage_precheck_uses_the_staged_summary() {
     );
 }
 
+/// `x` opens the typed confirmation; only `yes` + Enter yields the
+/// discard command, carrying the reversed patch and the forward backup
+/// (ADR-0014). The result message points at `margin undo`.
+#[test]
+fn discard_flow_requires_typed_yes() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::CursorDown);
+
+    assert_eq!(update(&mut state, Msg::DiscardHunk), None, "x never writes");
+    assert_eq!(state.input_mode(), margin_tui::app::InputMode::Confirm);
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("type yes"), "{frame}");
+    assert!(
+        frame.contains("src/app.rs"),
+        "prompt names the file: {frame}"
+    );
+    assert_snapshot!(frame);
+
+    for c in "yes".chars() {
+        assert_eq!(update(&mut state, Msg::ConfirmInput(c)), None);
+    }
+    let command = update(&mut state, Msg::ConfirmSubmit).expect("yes + Enter issues the command");
+    let Command::DiscardHunk { backup, patch } = command else {
+        panic!("expected a discard command");
+    };
+    assert!(state.confirm.is_none(), "prompt closes on submit");
+    // Backup is the forward hunk (what was on screen); patch is its
+    // reverse. Both must reparse cleanly.
+    assert!(backup.starts_with(b"diff --git"));
+    assert!(parse_unified(&backup).warnings.is_empty());
+    assert!(parse_unified(&patch).warnings.is_empty());
+    assert_ne!(backup, patch);
+
+    let reloaded = state.changeset.clone();
+    update(
+        &mut state,
+        Msg::CommandFinished(CommandResult::Discarded {
+            changeset: reloaded,
+            staged: None,
+            backed_up: true,
+        }),
+    );
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("margin undo"), "{frame}");
+}
+
+/// Anything except `yes` cancels; Esc cancels; a hunk that cannot be
+/// rendered refuses before the prompt ever opens.
+#[test]
+fn discard_cancels_and_refuses_safely() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+
+    // On the file header there is no hunk: no prompt, message instead.
+    update(&mut state, Msg::DiscardHunk);
+    assert!(state.confirm.is_none());
+    assert!(render(&mut state, 80, 24).contains("no hunk under the cursor"));
+
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::DiscardHunk);
+    for c in "no".chars() {
+        update(&mut state, Msg::ConfirmInput(c));
+    }
+    assert_eq!(update(&mut state, Msg::ConfirmSubmit), None);
+    assert!(state.confirm.is_none());
+    assert!(render(&mut state, 80, 24).contains("only `yes` confirms"));
+
+    update(&mut state, Msg::DiscardHunk);
+    assert_eq!(update(&mut state, Msg::ConfirmCancel), None);
+    assert!(render(&mut state, 80, 24).contains("discard cancelled"));
+
+    // A path that would need git quoting refuses without prompting.
+    let hostile = "diff --git \"a/e\\033vil.rs\" \"b/e\\033vil.rs\"\n\
+                   --- \"a/e\\033vil.rs\"\n+++ \"b/e\\033vil.rs\"\n\
+                   @@ -1,1 +1,1 @@\n-a\n+b\n";
+    let mut state = AppState::new(parse_unified(hostile.as_bytes()).changeset);
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::DiscardHunk);
+    assert!(state.confirm.is_none(), "unsafe path must not prompt");
+    assert!(render(&mut state, 80, 24).contains("needs git quoting"));
+
+    // Without a trash entry the success message says so.
+    let mut state = sample_state();
+    let reloaded = state.changeset.clone();
+    update(
+        &mut state,
+        Msg::CommandFinished(CommandResult::Discarded {
+            changeset: reloaded,
+            staged: None,
+            backed_up: false,
+        }),
+    );
+    assert!(render(&mut state, 80, 24).contains("backup disabled"));
+}
+
 /// `r` requests a reload; absorbing the result keeps the cursor's place
 /// and reports in the status bar.
 #[test]

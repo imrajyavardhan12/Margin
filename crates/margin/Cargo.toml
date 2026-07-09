@@ -24,6 +24,8 @@ toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Building real repos for `margin undo` binary tests.
+git2.workspace = true
 
 [lints]
 workspace = true

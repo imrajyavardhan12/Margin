@@ -100,19 +100,36 @@ pub struct PickerState {
     pub selected: usize,
 }
 
+/// `x` typed-confirmation prompt: the rendered patches wait here while the
+/// user types. Nothing is destroyed until `yes` + Enter (ADR-0014).
+pub struct ConfirmState {
+    /// What the user has typed so far.
+    pub input: String,
+    /// The file named in the prompt.
+    pub label: String,
+    /// Forward patch — the trash copy, persisted before the apply.
+    pub backup: Vec<u8>,
+    /// Reversed patch — what the executor applies to the working tree.
+    pub patch: Vec<u8>,
+}
+
 /// Which surface receives keys; derived from state, used by the keymap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
     Search,
     Picker,
+    Confirm,
 }
 
-/// Which index write the selected hunk should request.
+/// Which write the selected hunk should request. `Stage`/`Unstage` are
+/// index writes (ADR-0013); `Discard` is the working-tree write behind
+/// the typed confirmation (ADR-0014).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HunkAction {
     Stage,
     Unstage,
+    Discard,
 }
 
 impl HunkAction {
@@ -120,6 +137,7 @@ impl HunkAction {
         match self {
             HunkAction::Stage => "staged",
             HunkAction::Unstage => "unstaged",
+            HunkAction::Discard => "discarded",
         }
     }
 }
@@ -174,8 +192,13 @@ fn staged_path_key(file: &FileDiff) -> Option<&[u8]> {
 /// (ADR-0003: no I/O in the core, ADR-0013: writes are explicit).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    /// Apply the pre-rendered single-hunk patch to the index.
+    /// Apply the pre-rendered single-hunk patch to the index
+    /// (`action` is `Stage` or `Unstage`).
     ApplyHunk { action: HunkAction, patch: Vec<u8> },
+    /// Discard from the working tree (ADR-0014): persist `backup` to the
+    /// trash first, then apply the reversed `patch`. Only ever produced
+    /// by a confirmed `Msg::ConfirmSubmit`.
+    DiscardHunk { backup: Vec<u8>, patch: Vec<u8> },
     /// Re-read the changeset from the active source (`r`).
     Reload,
 }
@@ -196,9 +219,17 @@ pub enum CommandResult {
         changeset: Changeset,
         staged: Option<StagedFiles>,
     },
-    /// The hunk didn't apply to the index. Carries the attempted action
-    /// because the honest diagnosis differs: a stage that fails is
-    /// usually already staged; an unstage that fails usually wasn't.
+    /// `Command::DiscardHunk` succeeded; `backed_up` says whether a trash
+    /// entry exists (`discard_trash = false` disables them).
+    Discarded {
+        changeset: Changeset,
+        staged: Option<StagedFiles>,
+        backed_up: bool,
+    },
+    /// The hunk didn't apply. Carries the attempted action because the
+    /// honest diagnosis differs: a stage that fails is usually already
+    /// staged; an unstage that fails usually wasn't; a discard that
+    /// fails means the file moved since load.
     Stale(HunkAction),
     /// The active source cannot do this (patch file, stdin, two-files).
     Unsupported(&'static str),
@@ -219,6 +250,14 @@ pub enum Msg {
     /// `s` / `u`: request an index write for the hunk under the cursor.
     StageHunk,
     UnstageHunk,
+    /// `x`: open the typed-confirmation prompt for discarding the hunk
+    /// under the cursor (ADR-0014). The write happens only on
+    /// `ConfirmSubmit` with `yes` typed.
+    DiscardHunk,
+    ConfirmInput(char),
+    ConfirmBackspace,
+    ConfirmSubmit,
+    ConfirmCancel,
     /// `r`: re-read the changeset from the source.
     Reload,
     /// The runtime reporting a command's outcome.
@@ -293,6 +332,8 @@ pub struct AppState {
     pub staged: Option<StagedFiles>,
     pub search: Option<SearchState>,
     pub picker: Option<PickerState>,
+    /// `x` typed-confirmation prompt; `Some` while awaiting the word.
+    pub confirm: Option<ConfirmState>,
 }
 
 impl AppState {
@@ -316,6 +357,7 @@ impl AppState {
             staged: None,
             search: None,
             picker: None,
+            confirm: None,
         };
         state.rows = build_rows(&state.changeset, state.split_active);
         state.refresh_layout();
@@ -352,7 +394,9 @@ impl AppState {
 
     /// Which surface receives keys right now.
     pub fn input_mode(&self) -> InputMode {
-        if self.picker.is_some() {
+        if self.confirm.is_some() {
+            InputMode::Confirm
+        } else if self.picker.is_some() {
             InputMode::Picker
         } else if self.search.as_ref().is_some_and(|s| s.typing) {
             InputMode::Search
@@ -518,22 +562,28 @@ impl AppState {
         crate::view::wrap_count(&text, budget, self.content_height().max(1) + 1)
     }
 
-    /// Build the index-write command for the hunk under the cursor, or
-    /// explain in the status bar why there isn't one (ADR-0013: refusals
-    /// are messages, not errors).
-    fn request_hunk_apply(&mut self, action: HunkAction) -> Option<Command> {
-        let located = match self.rows.get(self.cursor) {
+    /// The (file, hunk) indices addressed by the cursor row, if any —
+    /// shared by every per-hunk action (`s`/`u`/`x`).
+    fn hunk_under_cursor(&self) -> Option<(usize, usize)> {
+        match self.rows.get(self.cursor) {
             Some(
                 &Row::HunkHeader { file, hunk }
                 | &Row::Line { file, hunk, .. }
                 | &Row::Split { file, hunk, .. },
-            ) => self
-                .changeset
-                .files
-                .get(file)
-                .and_then(|f| f.hunks.get(hunk).map(|h| (f, h))),
+            ) => Some((file, hunk)),
             _ => None,
-        };
+        }
+    }
+
+    /// Build the index-write command for the hunk under the cursor, or
+    /// explain in the status bar why there isn't one (ADR-0013: refusals
+    /// are messages, not errors).
+    fn request_hunk_apply(&mut self, action: HunkAction) -> Option<Command> {
+        let located = self.hunk_under_cursor();
+        let located = located.and_then(|(file, hunk)| {
+            let file = self.changeset.files.get(file)?;
+            Some((file, file.hunks.get(hunk)?))
+        });
         let Some((file, hunk)) = located else {
             self.status_message = Some("no hunk under the cursor".into());
             return None;
@@ -552,6 +602,9 @@ impl AppState {
         let rendered = match action {
             HunkAction::Stage => render_hunk_patch(file, hunk),
             HunkAction::Unstage => render_reversed_hunk_patch(file, hunk),
+            // Discards flow through request_discard (typed confirm,
+            // ADR-0014); this function only builds index writes.
+            HunkAction::Discard => return None,
         };
         match rendered {
             Ok(patch) => Some(Command::ApplyHunk { action, patch }),
@@ -565,6 +618,44 @@ impl AppState {
                     .into(),
                 );
                 None
+            }
+        }
+    }
+
+    /// `x`: open the typed-confirmation prompt for the hunk under the
+    /// cursor, with both patches pre-rendered so refusals surface now —
+    /// before the user is asked to type anything (ADR-0014). No command
+    /// is issued here; only `ConfirmSubmit` with `yes` typed does that.
+    fn request_discard(&mut self) {
+        let located = self.hunk_under_cursor();
+        let located = located.and_then(|(file, hunk)| {
+            let file = self.changeset.files.get(file)?;
+            Some((file, file.hunks.get(hunk)?))
+        });
+        let Some((file, hunk)) = located else {
+            self.status_message = Some("no hunk under the cursor".into());
+            return;
+        };
+        let rendered = render_hunk_patch(file, hunk)
+            .and_then(|backup| render_reversed_hunk_patch(file, hunk).map(|patch| (backup, patch)));
+        match rendered {
+            Ok((backup, patch)) => {
+                self.confirm = Some(ConfirmState {
+                    input: String::new(),
+                    label: file.display_path().into_owned(),
+                    backup,
+                    patch,
+                });
+            }
+            Err(refusal) => {
+                self.status_message = Some(
+                    match refusal {
+                        RenderRefusal::Binary => "cannot discard binary files",
+                        RenderRefusal::Rename => "cannot discard renames yet",
+                        RenderRefusal::UnsafePath => "cannot discard: path needs git quoting",
+                    }
+                    .into(),
+                );
             }
         }
     }
@@ -585,6 +676,18 @@ impl AppState {
                 self.absorb_changeset(changeset, staged);
                 self.status_message = Some("reloaded".into());
             }
+            CommandResult::Discarded {
+                changeset,
+                staged,
+                backed_up,
+            } => {
+                self.absorb_changeset(changeset, staged);
+                self.status_message = Some(if backed_up {
+                    "hunk discarded — `margin undo` restores it".into()
+                } else {
+                    "hunk discarded (backup disabled)".into()
+                });
+            }
             // The apply's dry run refused. The likeliest cause depends on
             // the direction: re-staging what's already in the index, or
             // unstaging what never was. Either way `r` shows the truth.
@@ -596,6 +699,10 @@ impl AppState {
             CommandResult::Stale(HunkAction::Unstage) => {
                 self.status_message =
                     Some("hunk isn't staged — or it changed since load (r reloads)".into());
+            }
+            CommandResult::Stale(HunkAction::Discard) => {
+                self.status_message =
+                    Some("hunk didn't apply — the file changed since load (r reloads)".into());
             }
             CommandResult::Unsupported(why) => self.status_message = Some(why.into()),
             CommandResult::Failed(err) => self.status_message = Some(format!("failed: {err}")),
@@ -683,6 +790,38 @@ pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
     match msg {
         Msg::StageHunk => command = state.request_hunk_apply(HunkAction::Stage),
         Msg::UnstageHunk => command = state.request_hunk_apply(HunkAction::Unstage),
+        Msg::DiscardHunk => state.request_discard(),
+        Msg::ConfirmInput(c) => {
+            if let Some(confirm) = &mut state.confirm {
+                // The input renders on the status line: control characters
+                // must never reach the terminal (SECURITY.md).
+                if !c.is_control() {
+                    confirm.input.push(c);
+                }
+            }
+        }
+        Msg::ConfirmBackspace => {
+            if let Some(confirm) = &mut state.confirm {
+                confirm.input.pop();
+            }
+        }
+        Msg::ConfirmSubmit => {
+            if let Some(confirm) = state.confirm.take() {
+                if confirm.input.trim().eq_ignore_ascii_case("yes") {
+                    command = Some(Command::DiscardHunk {
+                        backup: confirm.backup,
+                        patch: confirm.patch,
+                    });
+                } else {
+                    state.status_message = Some("discard cancelled (only `yes` confirms)".into());
+                }
+            }
+        }
+        Msg::ConfirmCancel => {
+            if state.confirm.take().is_some() {
+                state.status_message = Some("discard cancelled".into());
+            }
+        }
         // Always issued, even on an empty changeset — a reload may be
         // exactly what brings changes into view.
         Msg::Reload => command = Some(Command::Reload),

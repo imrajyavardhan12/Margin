@@ -24,8 +24,8 @@ use margin_core::{parse_unified, Changeset, FileStatus, ParseWarning};
 use margin_tui::theme::{Theme, THEME_NAMES};
 use margin_tui::AppState;
 use margin_vcs::{
-    apply_patch_to_index, DiffSource, GitRevRange, GitShow, GitStaged, GitWorktree, StageError,
-    TwoFiles,
+    apply_patch_to_index, apply_patch_to_worktree, undo_last_discard, write_trash, DiffSource,
+    GitRevRange, GitShow, GitStaged, GitWorktree, StageError, TwoFiles,
 };
 
 #[derive(Parser)]
@@ -74,6 +74,8 @@ enum Command {
     /// Git pager mode: interactive on a terminal, byte-identical
     /// passthrough when piped (safe as `git config core.pager`)
     Pager,
+    /// Restore the most recent discarded hunk from the trash (ADR-0014)
+    Undo,
 }
 
 #[derive(Args)]
@@ -145,6 +147,27 @@ fn main() -> ExitCode {
         }
         Command::Patch { input } => run_patch(input.as_deref().unwrap_or("-"), &session),
         Command::Pager => run_patch("-", &session),
+        Command::Undo => run_undo(),
+    }
+}
+
+/// `margin undo`: restore the newest trash entry to the working tree.
+/// Empty trash and stale entries exit 2 with the reason (ADR-0007); a
+/// stale entry is kept and its path printed for hand-recovery.
+fn run_undo() -> ExitCode {
+    let cwd = match working_dir() {
+        Ok(dir) => dir,
+        Err(code) => return code,
+    };
+    match undo_last_discard(&cwd) {
+        Ok(path) => {
+            println!("restored {}", path.display());
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("margin: {err}");
+            ExitCode::from(2)
+        }
     }
 }
 
@@ -250,30 +273,34 @@ fn run_patch(input: &str, session: &Session) -> ExitCode {
     let mut executor = VcsExecutor {
         repo: None,
         source: None,
-        staged_indicator: false,
+        worktree: false,
+        trash: false,
     };
     let code = show(outcome.changeset, session, None, &mut executor);
     report_warnings(&outcome.warnings);
     code
 }
 
-/// Executes TUI commands against the real repository (ADR-0013).
+/// Executes TUI commands against the real repository (ADR-0013/0014).
 /// `repo` is Some only for index-relative reviews (worktree/--staged),
 /// where staging a displayed hunk is meaningful; everything else refuses.
-/// `staged_indicator` is true only for worktree reviews — the one place
-/// the sidebar's staged dots carry information (`--staged` shows staged
-/// content by definition, other sources have no index in play).
+/// `worktree` is true only for worktree reviews — the one place the
+/// sidebar's staged dots carry information (`--staged` shows staged
+/// content by definition) and the only place a displayed hunk can be
+/// discarded (its lines *are* working-tree content there).
+/// `trash` mirrors `discard_trash`: back up before destroying.
 struct VcsExecutor<'a> {
     repo: Option<PathBuf>,
     source: Option<&'a dyn DiffSource>,
-    staged_indicator: bool,
+    worktree: bool,
+    trash: bool,
 }
 
 impl VcsExecutor<'_> {
     /// The sidebar's staged summary, when it applies to this review
     /// (`None` otherwise — see `margin_tui::StagedFiles`).
     fn staged_summary(&self) -> Option<margin_tui::StagedFiles> {
-        if !self.staged_indicator {
+        if !self.worktree {
             return None;
         }
         self.repo.as_deref().map(load_staged)
@@ -305,6 +332,47 @@ impl margin_tui::CommandExecutor for VcsExecutor<'_> {
                     Err(err) => CommandResult::Failed(err.to_string()),
                 }
             }
+            margin_tui::Command::DiscardHunk { backup, patch } => {
+                let (true, Some(repo), Some(source)) = (self.worktree, &self.repo, self.source)
+                else {
+                    return CommandResult::Unsupported("discard needs a git worktree review");
+                };
+                // ADR-0014: nothing is destroyed before a copy exists —
+                // a failed trash write aborts the discard entirely.
+                let trash_entry = if self.trash {
+                    match write_trash(repo, &backup) {
+                        Ok(path) => Some(path),
+                        Err(err) => {
+                            return CommandResult::Failed(format!(
+                                "discard aborted, backup failed: {err}"
+                            ))
+                        }
+                    }
+                } else {
+                    None
+                };
+                match apply_patch_to_worktree(repo, &patch) {
+                    Ok(()) => match source.load() {
+                        Ok(changeset) => CommandResult::Discarded {
+                            changeset,
+                            staged: self.staged_summary(),
+                            backed_up: trash_entry.is_some(),
+                        },
+                        Err(err) => {
+                            CommandResult::Failed(format!("discarded, but reload failed: {err}"))
+                        }
+                    },
+                    Err(StageError::Stale(_)) => {
+                        // The dry run refused: nothing was destroyed, so
+                        // the orphan backup would only mislead a later undo.
+                        if let Some(path) = trash_entry {
+                            let _ = std::fs::remove_file(path);
+                        }
+                        CommandResult::Stale(margin_tui::HunkAction::Discard)
+                    }
+                    Err(err) => CommandResult::Failed(err.to_string()),
+                }
+            }
             margin_tui::Command::Reload => {
                 let Some(source) = self.source else {
                     return CommandResult::Unsupported("cannot reload patch or piped input");
@@ -325,14 +393,15 @@ fn run_source(
     source: &dyn DiffSource,
     session: &Session,
     staging_repo: Option<PathBuf>,
-    staged_indicator: bool,
+    worktree: bool,
 ) -> ExitCode {
     match source.load() {
         Ok(changeset) => {
             let mut executor = VcsExecutor {
                 repo: staging_repo,
                 source: Some(source),
-                staged_indicator,
+                worktree,
+                trash: session.config.discard_trash,
             };
             let staged = executor.staged_summary();
             show(changeset, session, staged, &mut executor)
