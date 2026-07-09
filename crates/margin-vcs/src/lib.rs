@@ -18,10 +18,12 @@
 //! Implemented: [`GitWorktree`], [`GitStaged`], [`GitShow`], [`GitRevRange`].
 //! Coming with issue #5: `TwoFiles`, `PatchInput`.
 
+mod discard;
 mod files;
 mod git;
 mod staging;
 
+pub use discard::{apply_patch_to_worktree, undo_last_discard, write_trash, UndoError};
 pub use files::TwoFiles;
 pub use git::{GitRevRange, GitShow, GitStaged, GitWorktree};
 pub use staging::{apply_patch_to_index, StageError};

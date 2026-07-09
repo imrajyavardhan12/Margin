@@ -34,3 +34,5 @@ questions or, worse, silently unsettle them.
 | [0010](0010-testing-strategy.md) | Testing: snapshots, temp repos, corpus, fuzz, benches | Accepted |
 | [0011](0011-release-distribution.md) | Releases: cargo-dist, Conventional Commits, MSRV policy | Accepted |
 | [0012](0012-license.md) | License: MIT OR Apache-2.0 | Accepted |
+| [0013](0013-hunk-staging-safety.md) | Hunk staging: index-only, dry-run first, exact bytes | Accepted |
+| [0014](0014-discard-safety.md) | Discard: trash before destroy, worktree-only, typed confirm | Accepted |
