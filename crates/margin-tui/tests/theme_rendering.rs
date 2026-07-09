@@ -98,7 +98,9 @@ fn staged_indicator_wears_the_staged_style() {
     let staged_fg = theme.sidebar_staged.fg;
     state.apply_theme(theme);
     // Stage the sample's only file, so its sidebar row lights up.
-    state.staged = StagedFiles::from_staged_changeset(&parse_unified(SAMPLE.as_bytes()).changeset);
+    state.staged = Some(StagedFiles::from_staged_changeset(
+        &parse_unified(SAMPLE.as_bytes()).changeset,
+    ));
     update(&mut state, Msg::Resize(80, 24));
 
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();

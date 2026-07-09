@@ -310,7 +310,9 @@ fn stage_request_result_and_clear_flow() {
     update(&mut state, Msg::NextHunk);
     update(&mut state, Msg::CursorDown);
     let command = update(&mut state, Msg::StageHunk).expect("line row must yield a command");
-    let Command::ApplyHunk { action, patch } = command;
+    let Command::ApplyHunk { action, patch } = command else {
+        panic!("expected an apply command");
+    };
     assert_eq!(action, HunkAction::Stage);
     assert!(patch.starts_with(b"diff --git"));
     assert!(parse_unified(&patch).warnings.is_empty());
@@ -331,7 +333,7 @@ fn stage_request_result_and_clear_flow() {
             Msg::CommandFinished(CommandResult::Applied {
                 action,
                 changeset: reloaded,
-                staged,
+                staged: Some(staged),
             }),
         ),
         None
@@ -358,7 +360,9 @@ fn sidebar_marks_staged_files() {
     // `docs/NOTES.md`, matching the worktree file it annotates.
     let staged_patch = b"diff --git a/docs/NOTES.md b/docs/NOTES.md\n\
         --- a/docs/NOTES.md\n+++ b/docs/NOTES.md\n@@ -1,1 +1,1 @@\n-old\n+new\n";
-    state.staged = StagedFiles::from_staged_changeset(&parse_unified(staged_patch).changeset);
+    state.staged = Some(StagedFiles::from_staged_changeset(
+        &parse_unified(staged_patch).changeset,
+    ));
 
     let frame = render(&mut state, 80, 24);
     assert!(
@@ -382,12 +386,81 @@ fn stage_refuses_off_hunk_and_reports_stale() {
     assert_eq!(update(&mut state, Msg::StageHunk), None);
     assert!(render(&mut state, 80, 24).contains("no hunk under the cursor"));
 
-    update(&mut state, Msg::CommandFinished(CommandResult::Stale));
-    assert!(render(&mut state, 80, 24).contains("no longer applies"));
+    // The honest diagnosis differs by direction (a failed stage is usually
+    // already staged; a failed unstage usually wasn't staged).
+    update(
+        &mut state,
+        Msg::CommandFinished(CommandResult::Stale(HunkAction::Stage)),
+    );
+    assert!(render(&mut state, 80, 24).contains("already staged"));
+    update(
+        &mut state,
+        Msg::CommandFinished(CommandResult::Stale(HunkAction::Unstage)),
+    );
+    assert!(render(&mut state, 80, 24).contains("isn't staged"));
 
     update(
         &mut state,
         Msg::CommandFinished(CommandResult::Unsupported("staging needs a git review")),
     );
     assert!(render(&mut state, 80, 24).contains("staging needs a git review"));
+}
+
+/// With an authoritative staged summary, unstaging a file with no index
+/// content refuses purely (no command); without one (`--staged` reviews),
+/// the request must still go through — the summary being absent is not
+/// the same as nothing being staged.
+#[test]
+fn unstage_precheck_uses_the_staged_summary() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::CursorDown);
+
+    state.staged = Some(StagedFiles::default());
+    assert_eq!(
+        update(&mut state, Msg::UnstageHunk),
+        None,
+        "nothing staged: refuse without issuing a command"
+    );
+    assert!(render(&mut state, 80, 24).contains("nothing staged in this file"));
+
+    state.staged = None;
+    let command = update(&mut state, Msg::UnstageHunk);
+    assert!(
+        matches!(
+            command,
+            Some(Command::ApplyHunk {
+                action: HunkAction::Unstage,
+                ..
+            })
+        ),
+        "no summary: the request must reach the index, got {command:?}"
+    );
+}
+
+/// `r` requests a reload; absorbing the result keeps the cursor's place
+/// and reports in the status bar.
+#[test]
+fn reload_requests_and_absorbs() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::NextHunk);
+    let anchor = state.rows[state.cursor];
+
+    assert_eq!(update(&mut state, Msg::Reload), Some(Command::Reload));
+    let reloaded = state.changeset.clone();
+    update(
+        &mut state,
+        Msg::CommandFinished(CommandResult::Reloaded {
+            changeset: reloaded,
+            staged: None,
+        }),
+    );
+    assert_eq!(state.rows[state.cursor], anchor, "cursor keeps its place");
+    assert!(render(&mut state, 80, 24).contains("reloaded"));
+
+    // An empty review still offers reload — it may bring changes into view.
+    let mut empty = AppState::new(margin_core::Changeset::default());
+    assert_eq!(update(&mut empty, Msg::Reload), Some(Command::Reload));
 }

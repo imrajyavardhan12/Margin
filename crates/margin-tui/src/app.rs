@@ -132,6 +132,13 @@ impl HunkAction {
 /// ADR-0005). Matching is by the file's canonical byte path, so a file
 /// modified in both the worktree and the index lines up across the two
 /// diffs.
+///
+/// Carried as `Option<StagedFiles>` everywhere: `Some` means the summary
+/// is authoritative (a worktree review, where staged-vs-not is real
+/// information), `None` means not applicable (`--staged` reviews are
+/// staged by definition; patches and ranges have no index at all). The
+/// distinction matters — an empty `Some` refuses unstaging, `None` must
+/// not.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StagedFiles {
     paths: std::collections::HashSet<Vec<u8>>,
@@ -148,10 +155,6 @@ impl StagedFiles {
                 .map(<[u8]>::to_vec)
                 .collect(),
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.paths.is_empty()
     }
 
     /// Whether this file (from the review) has staged content.
@@ -173,6 +176,8 @@ fn staged_path_key(file: &FileDiff) -> Option<&[u8]> {
 pub enum Command {
     /// Apply the pre-rendered single-hunk patch to the index.
     ApplyHunk { action: HunkAction, patch: Vec<u8> },
+    /// Re-read the changeset from the active source (`r`).
+    Reload,
 }
 
 /// Outcome of a command, fed back into [`update`] as
@@ -184,11 +189,18 @@ pub enum CommandResult {
     Applied {
         action: HunkAction,
         changeset: Changeset,
-        staged: StagedFiles,
+        staged: Option<StagedFiles>,
     },
-    /// The hunk no longer applies — the world moved since load.
-    Stale,
-    /// The active source cannot stage (patch file, stdin, two-files).
+    /// `Command::Reload` succeeded.
+    Reloaded {
+        changeset: Changeset,
+        staged: Option<StagedFiles>,
+    },
+    /// The hunk didn't apply to the index. Carries the attempted action
+    /// because the honest diagnosis differs: a stage that fails is
+    /// usually already staged; an unstage that fails usually wasn't.
+    Stale(HunkAction),
+    /// The active source cannot do this (patch file, stdin, two-files).
     Unsupported(&'static str),
     Failed(String),
 }
@@ -207,6 +219,8 @@ pub enum Msg {
     /// `s` / `u`: request an index write for the hunk under the cursor.
     StageHunk,
     UnstageHunk,
+    /// `r`: re-read the changeset from the source.
+    Reload,
     /// The runtime reporting a command's outcome.
     CommandFinished(CommandResult),
     CursorDown,
@@ -273,9 +287,10 @@ pub struct AppState {
     /// the next keypress.
     pub status_message: Option<String>,
     /// Which files have staged content, for the sidebar indicator. Set by
-    /// the runtime shell at startup and refreshed after each index write;
-    /// empty for sources that cannot stage (patches, ranges, two files).
-    pub staged: StagedFiles,
+    /// the runtime shell at startup and refreshed after each index write.
+    /// `None` when the summary does not apply (`--staged` reviews, patches,
+    /// ranges) — see [`StagedFiles`] for why that differs from empty.
+    pub staged: Option<StagedFiles>,
     pub search: Option<SearchState>,
     pub picker: Option<PickerState>,
 }
@@ -298,7 +313,7 @@ impl AppState {
             theme: crate::theme::Theme::default(),
             highlight: crate::highlight::HighlightCache::default(),
             status_message: None,
-            staged: StagedFiles::default(),
+            staged: None,
             search: None,
             picker: None,
         };
@@ -523,6 +538,17 @@ impl AppState {
             self.status_message = Some("no hunk under the cursor".into());
             return None;
         };
+        // When the staged summary is authoritative, an unstage on a file
+        // with no index content can only fail — refuse it accurately here
+        // instead of letting the apply report a misleading failure.
+        if action == HunkAction::Unstage {
+            if let Some(staged) = &self.staged {
+                if !staged.is_staged(file) {
+                    self.status_message = Some("nothing staged in this file".into());
+                    return None;
+                }
+            }
+        }
         let rendered = match action {
             HunkAction::Stage => render_hunk_patch(file, hunk),
             HunkAction::Unstage => render_reversed_hunk_patch(file, hunk),
@@ -543,8 +569,8 @@ impl AppState {
         }
     }
 
-    /// Absorb a command outcome: reload and re-anchor on success (the
-    /// highlight cache is index-keyed and must rebuild), report otherwise.
+    /// Absorb a command outcome: swap in the fresh changeset and re-anchor
+    /// on success, report otherwise.
     fn finish_command(&mut self, result: CommandResult) {
         match result {
             CommandResult::Applied {
@@ -552,23 +578,43 @@ impl AppState {
                 changeset,
                 staged,
             } => {
-                let anchor = self.rows.get(self.cursor).copied();
-                self.changeset = changeset;
-                self.staged = staged;
-                self.rows = build_rows(&self.changeset, self.split_active);
-                self.cursor = anchor.map_or(0, |a| locate(&self.rows, a));
-                self.clamp_cursor();
-                self.highlight = crate::highlight::HighlightCache::new(self.theme.syntax_theme);
-                if let Some(search) = &mut self.search {
-                    recompute_matches(search, &self.rows, &self.changeset);
-                }
+                self.absorb_changeset(changeset, staged);
                 self.status_message = Some(format!("hunk {}", action.past_tense()));
             }
-            CommandResult::Stale => {
-                self.status_message = Some("hunk no longer applies — it changed since load".into());
+            CommandResult::Reloaded { changeset, staged } => {
+                self.absorb_changeset(changeset, staged);
+                self.status_message = Some("reloaded".into());
+            }
+            // The apply's dry run refused. The likeliest cause depends on
+            // the direction: re-staging what's already in the index, or
+            // unstaging what never was. Either way `r` shows the truth.
+            CommandResult::Stale(HunkAction::Stage) => {
+                self.status_message = Some(
+                    "hunk didn't apply — already staged, or changed since load (r reloads)".into(),
+                );
+            }
+            CommandResult::Stale(HunkAction::Unstage) => {
+                self.status_message =
+                    Some("hunk isn't staged — or it changed since load (r reloads)".into());
             }
             CommandResult::Unsupported(why) => self.status_message = Some(why.into()),
             CommandResult::Failed(err) => self.status_message = Some(format!("failed: {err}")),
+        }
+    }
+
+    /// Swap in a freshly loaded changeset, keeping the user's place: rebuild
+    /// rows, re-anchor the cursor via `locate`, rebuild the index-keyed
+    /// highlight cache, and recompute search matches.
+    fn absorb_changeset(&mut self, changeset: Changeset, staged: Option<StagedFiles>) {
+        let anchor = self.rows.get(self.cursor).copied();
+        self.changeset = changeset;
+        self.staged = staged;
+        self.rows = build_rows(&self.changeset, self.split_active);
+        self.cursor = anchor.map_or(0, |a| locate(&self.rows, a));
+        self.clamp_cursor();
+        self.highlight = crate::highlight::HighlightCache::new(self.theme.syntax_theme);
+        if let Some(search) = &mut self.search {
+            recompute_matches(search, &self.rows, &self.changeset);
         }
     }
 
@@ -637,6 +683,9 @@ pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
     match msg {
         Msg::StageHunk => command = state.request_hunk_apply(HunkAction::Stage),
         Msg::UnstageHunk => command = state.request_hunk_apply(HunkAction::Unstage),
+        // Always issued, even on an empty changeset — a reload may be
+        // exactly what brings changes into view.
+        Msg::Reload => command = Some(Command::Reload),
         Msg::CommandFinished(result) => state.finish_command(result),
         Msg::CursorDown => {
             state.cursor = state.cursor.saturating_add(1);

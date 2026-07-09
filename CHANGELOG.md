@@ -11,9 +11,16 @@ release notes are hand-curated on top in GitHub Releases.
   the cursor, applying exactly the reviewed hunk bytes to the git index —
   never the working tree — then reloading and re-anchoring the cursor.
   Stale hunks, binary files, renames, and non-git sources report in the
-  status bar instead of failing. The sidebar marks files that have staged
-  content with a dot, so partial staging is visible at a glance; the marker
-  refreshes as you stage and unstage.
+  status bar instead of failing. In worktree reviews the sidebar marks
+  files that have staged content with a dot, so partial staging is visible
+  at a glance; the marker refreshes as you stage and unstage.
+- Reload: `r` re-reads the diff from its source without leaving the
+  review, keeping your place. Works in every mode with a live source
+  (worktree, `--staged`, revisions, files); staging feedback points at it
+  when a hunk no longer applies.
+- Staging feedback tells the truth about the common misfires: staging an
+  already-staged hunk says so (instead of "changed since load"), and
+  unstaging a file with nothing staged refuses up front.
 
 ## [0.1.0-rc.1] - 2026-07-03
 

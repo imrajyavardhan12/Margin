@@ -39,7 +39,7 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
         } else {
             state.theme.context
         };
-        let staged = state.staged.is_staged(file);
+        let staged = state.staged.as_ref().is_some_and(|s| s.is_staged(file));
         lines.push(TLine::from(vec![
             Span::styled(marker, base),
             Span::styled(
