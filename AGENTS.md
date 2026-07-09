@@ -121,7 +121,10 @@ Dependency rule (compiler-enforced, do not work around):
   `--workflow ci.yml --commit $(git rev-parse HEAD)` after a short sleep.
 - Windows CI is real: key handling filters `KeyEventKind::Press` (Windows
   sends Release too), and autocrlf corrupts anything not guarded by
-  `.gitattributes`.
+  `.gitattributes`. Temp-repo tests that write the **worktree** through
+  libgit2 (`ApplyLocation::WorkDir`) must pin `core.autocrlf=false` in the
+  repo config — runners set it true globally and checkout filters rewrite
+  LF as CRLF, breaking byte-identity asserts (Windows-only red).
 
 ## Workflow
 

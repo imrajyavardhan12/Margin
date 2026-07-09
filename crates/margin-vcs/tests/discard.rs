@@ -38,6 +38,10 @@ fn repo_with_two_hunks() -> (tempfile::TempDir, Repository) {
     let mut config = repo.config().unwrap();
     config.set_str("user.name", "Test").unwrap();
     config.set_str("user.email", "test@example.com").unwrap();
+    // Worktree applies write through git's checkout filters. Windows
+    // runners set core.autocrlf=true globally, which would rewrite LF
+    // fixtures as CRLF and break byte-identity — pin it off per-repo.
+    config.set_bool("core.autocrlf", false).unwrap();
     fs::write(dir.path().join("notes.txt"), BASE).unwrap();
     let mut index = repo.index().unwrap();
     index.add_path(Path::new("notes.txt")).unwrap();
