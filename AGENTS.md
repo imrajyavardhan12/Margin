@@ -49,7 +49,8 @@ crates/margin-tui    Elm: AppState + Msg + update() + pure view(); NEVER imports
   view/              diff.rs unified+split render, sidebar, help, style.rs compose,
                      split.rs fit_spans, mod.rs layout+status+printable()
   runtime.rs         terminal session, panic guard, poll loop, command dispatch
-                     (update() returns Command; CommandExecutor impl lives in the bin)
+                     (update() returns Command; CommandExecutor impl lives in the bin),
+                     WatchHandle debounce (bin's notify watcher feeds it; -w)
 crates/margin        bin: clap CLI (main.rs), config discovery/merge (config.rs)
 ```
 

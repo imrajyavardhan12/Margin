@@ -537,6 +537,15 @@ fn discard_cancels_and_refuses_safely() {
     assert!(render(&mut state, 80, 24).contains("backup disabled"));
 }
 
+/// Watch mode announces itself in the status bar like [split]/[wrap].
+#[test]
+fn watch_badge_shows_when_watching() {
+    let mut state = sample_state();
+    assert!(!render(&mut state, 80, 24).contains("[watch]"));
+    state.watching = true;
+    assert!(render(&mut state, 80, 24).contains("[watch]"));
+}
+
 /// `r` requests a reload; absorbing the result keeps the cursor's place
 /// and reports in the status bar.
 #[test]

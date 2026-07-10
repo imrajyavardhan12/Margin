@@ -176,6 +176,16 @@ fn open_repo(path: &Path) -> Result<Repository, SourceError> {
     })
 }
 
+/// The repository's working-tree root for `path` (discovering upward,
+/// like every source does). Watch mode observes this directory; bare
+/// repositories have none and error.
+pub fn workdir_root(path: &Path) -> Result<PathBuf, SourceError> {
+    let repo = open_repo(path)?;
+    repo.workdir()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| SourceError::Git("bare repository has no working tree".into()))
+}
+
 /// HEAD's tree, or `None` on an unborn branch (fresh `git init`).
 fn head_tree(repo: &Repository) -> Result<Option<Tree<'_>>, SourceError> {
     match repo.head() {

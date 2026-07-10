@@ -334,6 +334,9 @@ pub struct AppState {
     pub picker: Option<PickerState>,
     /// `x` typed-confirmation prompt; `Some` while awaiting the word.
     pub confirm: Option<ConfirmState>,
+    /// Watch mode (`-w`): the status bar shows `[watch]` and the runtime
+    /// feeds debounced reloads. Set by the binary at startup.
+    pub watching: bool,
 }
 
 impl AppState {
@@ -358,6 +361,7 @@ impl AppState {
             search: None,
             picker: None,
             confirm: None,
+            watching: false,
         };
         state.rows = build_rows(&state.changeset, state.split_active);
         state.refresh_layout();

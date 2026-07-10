@@ -44,6 +44,10 @@ struct Cli {
     #[arg(long)]
     staged: bool,
 
+    /// Reload automatically when the repository changes (debounced)
+    #[arg(short = 'w', long)]
+    watch: bool,
+
     /// Theme: ledger, foolscap, carbon, blueprint
     #[arg(long, global = true, value_name = "NAME")]
     theme: Option<String>,
@@ -83,6 +87,10 @@ struct DiffArgs {
     /// Review the index (staged changes) instead of the working tree
     #[arg(long)]
     staged: bool,
+
+    /// Reload automatically when the repository changes (debounced)
+    #[arg(short = 'w', long)]
+    watch: bool,
 
     /// A revision (`HEAD~2`), a range (`main..feature`), or two files
     #[arg(value_name = "REV|RANGE|FILE", num_args = 0..=2)]
@@ -128,6 +136,7 @@ fn main() -> ExitCode {
 
     let command = cli.command.unwrap_or(Command::Diff(DiffArgs {
         staged: cli.staged,
+        watch: cli.watch,
         targets: Vec::new(),
     }));
 
@@ -142,6 +151,7 @@ fn main() -> ExitCode {
                 &GitShow::new(cwd, rev.unwrap_or_else(|| "HEAD".into())),
                 &session,
                 None,
+                false,
                 false,
             )
         }
@@ -183,41 +193,67 @@ fn run_diff(args: DiffArgs, session: &Session) -> ExitCode {
     if args.staged {
         // Staging commands stay meaningful (`u` unstages from the index),
         // but the staged indicator does not: everything shown is staged.
-        return run_source(&GitStaged::new(cwd.clone()), session, Some(cwd), false);
+        return run_source(
+            &GitStaged::new(cwd.clone()),
+            session,
+            Some(cwd),
+            false,
+            args.watch,
+        );
     }
 
     match args.targets.as_slice() {
         [] => {
             let mut source = GitWorktree::new(cwd.clone());
             source.include_untracked = session.config.include_untracked;
-            run_source(&source, session, Some(cwd), true)
+            run_source(&source, session, Some(cwd), true, args.watch)
         }
         [single] => {
             if let Some((from, to)) = split_range(single) {
-                run_source(&GitRevRange::new(cwd, from, to), session, None, false)
+                if args.watch {
+                    return watch_needs_worktree();
+                }
+                run_source(
+                    &GitRevRange::new(cwd, from, to),
+                    session,
+                    None,
+                    false,
+                    false,
+                )
             } else {
                 // `margin diff <rev>`: working tree vs that revision —
                 // git's semantics.
                 let mut source = GitWorktree::new(cwd.clone());
                 source.include_untracked = session.config.include_untracked;
                 source.base = Some(single.clone());
-                run_source(&source, session, Some(cwd), true)
+                run_source(&source, session, Some(cwd), true, args.watch)
             }
         }
         [a, b] => {
+            if args.watch {
+                return watch_needs_worktree();
+            }
             if Path::new(a).is_file() && Path::new(b).is_file() {
-                run_source(&TwoFiles::new(a, b), session, None, false)
+                run_source(&TwoFiles::new(a, b), session, None, false, false)
             } else {
                 run_source(
                     &GitRevRange::new(cwd, a.clone(), b.clone()),
                     session,
                     None,
                     false,
+                    false,
                 )
             }
         }
         _ => unreachable!("clap caps targets at 2"),
     }
+}
+
+/// Static views (ranges, two files) have nothing live to watch (ADR-0007:
+/// refuse loudly, exit 2, rather than silently ignore a flag).
+fn watch_needs_worktree() -> ExitCode {
+    eprintln!("margin: --watch needs a worktree or --staged review");
+    ExitCode::from(2)
 }
 
 /// `A..B` / `A...B` -> (A, B); empty sides default to HEAD, like git.
@@ -276,7 +312,7 @@ fn run_patch(input: &str, session: &Session) -> ExitCode {
         worktree: false,
         trash: false,
     };
-    let code = show(outcome.changeset, session, None, &mut executor);
+    let code = show(outcome.changeset, session, None, None, &mut executor);
     report_warnings(&outcome.warnings);
     code
 }
@@ -394,9 +430,28 @@ fn run_source(
     session: &Session,
     staging_repo: Option<PathBuf>,
     worktree: bool,
+    watch: bool,
 ) -> ExitCode {
     match source.load() {
         Ok(changeset) => {
+            // Watch mode: OS events feed the debounce handle; the event
+            // loop turns quiescence into the same reload `r` performs.
+            // The watcher must stay alive for the whole session — dropping
+            // it stops the events.
+            let (watch_handle, _watcher) = if watch {
+                let Some(repo) = staging_repo.as_deref() else {
+                    return watch_needs_worktree();
+                };
+                match start_watcher(repo) {
+                    Ok((handle, watcher)) => (Some(handle), Some(watcher)),
+                    Err(err) => {
+                        eprintln!("margin: --watch failed to start: {err}");
+                        return ExitCode::from(2);
+                    }
+                }
+            } else {
+                (None, None)
+            };
             let mut executor = VcsExecutor {
                 repo: staging_repo,
                 source: Some(source),
@@ -404,11 +459,66 @@ fn run_source(
                 trash: session.config.discard_trash,
             };
             let staged = executor.staged_summary();
-            show(changeset, session, staged, &mut executor)
+            show(
+                changeset,
+                session,
+                staged,
+                watch_handle.as_deref(),
+                &mut executor,
+            )
         }
         Err(err) => {
             eprintln!("margin: {err}");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// Start the OS file watcher on the repository's working-tree root,
+/// feeding the debounce handle from notify's event thread.
+fn start_watcher(
+    repo: &Path,
+) -> Result<
+    (
+        std::sync::Arc<margin_tui::WatchHandle>,
+        notify::RecommendedWatcher,
+    ),
+    String,
+> {
+    use notify::Watcher as _;
+    let root = margin_vcs::workdir_root(repo).map_err(|e| e.to_string())?;
+    let handle = std::sync::Arc::new(margin_tui::WatchHandle::new(
+        std::time::Duration::from_millis(250),
+    ));
+    let signal = std::sync::Arc::clone(&handle);
+    let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
+        if let Ok(event) = res {
+            if event.paths.iter().any(|p| watch_relevant(p)) {
+                signal.notify();
+            }
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    watcher
+        .watch(&root, notify::RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+    Ok((handle, watcher))
+}
+
+/// Everything outside `.git/` is review-relevant. Inside it, only three
+/// paths are: the index (external staging), HEAD (branch switch), and
+/// logs/HEAD — the reflog, appended on *every* HEAD movement, which is
+/// what catches new commits (a commit moves `refs/heads/<branch>`, not
+/// the HEAD file). Object and lock churn must not storm reloads.
+fn watch_relevant(path: &Path) -> bool {
+    let comps: Vec<&std::ffi::OsStr> = path.components().map(|c| c.as_os_str()).collect();
+    match comps.iter().position(|c| *c == ".git") {
+        None => true,
+        Some(i) => {
+            let rest = &comps[i + 1..];
+            rest == [std::ffi::OsStr::new("index")]
+                || rest == [std::ffi::OsStr::new("HEAD")]
+                || rest == [std::ffi::OsStr::new("logs"), std::ffi::OsStr::new("HEAD")]
         }
     }
 }
@@ -429,6 +539,7 @@ fn show(
     changeset: Changeset,
     session: &Session,
     staged: Option<margin_tui::StagedFiles>,
+    watch: Option<&margin_tui::WatchHandle>,
     executor: &mut dyn margin_tui::CommandExecutor,
 ) -> ExitCode {
     if !std::io::stdout().is_terminal() {
@@ -439,7 +550,8 @@ fn show(
     state.apply_theme(session.theme.clone());
     state.set_layout_mode(session.config.layout.into());
     state.staged = staged;
-    match margin_tui::run(&mut state, executor) {
+    state.watching = watch.is_some();
+    match margin_tui::run(&mut state, executor, watch) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("margin: terminal error: {err}");
@@ -494,4 +606,36 @@ fn print_summary(changeset: &Changeset) {
         changeset.additions(),
         changeset.deletions()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::watch_relevant;
+    use std::path::Path;
+
+    #[test]
+    fn watch_filter_passes_worktree_and_index_ignores_git_internals() {
+        assert!(watch_relevant(Path::new("/repo/src/main.rs")));
+        assert!(watch_relevant(Path::new("/repo/.git/index")), "staging");
+        assert!(
+            watch_relevant(Path::new("/repo/.git/HEAD")),
+            "branch switch"
+        );
+        assert!(
+            watch_relevant(Path::new("/repo/.git/logs/HEAD")),
+            "reflog append: the signal for a new commit"
+        );
+        assert!(
+            !watch_relevant(Path::new("/repo/.git/objects/ab/cdef")),
+            "object churn must not storm reloads"
+        );
+        assert!(!watch_relevant(Path::new("/repo/.git/index.lock")));
+        assert!(!watch_relevant(Path::new("/repo/.git/refs/heads/main")));
+        assert!(
+            !watch_relevant(Path::new("/repo/.git/margin/trash/1.patch")),
+            "our own trash writes must not echo"
+        );
+        // A directory literally named .git deeper down still gates.
+        assert!(watch_relevant(Path::new("/repo/docs/git-notes.md")));
+    }
 }

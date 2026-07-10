@@ -46,6 +46,10 @@ clap = { version = "4.5", features = ["derive", "wrap_help"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 
+# Watch mode (issue 12): OS-native FS events (FSEvents/inotify/RDCW),
+# no polling storms.
+notify = "8"
+
 # Errors (ADR 0009)
 thiserror = "2"
 anyhow = "1"

@@ -130,13 +130,14 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
                 .unwrap_or_default();
             let layout = if state.split_active { "  [split]" } else { "" };
             let wrap = if state.wrap { "  [wrap]" } else { "" };
+            let watch = if state.watching { "  [watch]" } else { "" };
             let search = match (&state.search, state.match_position()) {
                 (Some(s), Some((pos, total))) => format!("  /{} {pos}/{total}", s.query),
                 (Some(s), None) => format!("  /{} 0/{}", s.query, s.matches.len()),
                 (None, _) => String::new(),
             };
             format!(
-                " {path}  {}/{}{layout}{wrap}{search}",
+                " {path}  {}/{}{layout}{wrap}{watch}{search}",
                 state.cursor + 1,
                 state.rows.len()
             )

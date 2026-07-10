@@ -21,6 +21,13 @@ release notes are hand-curated on top in GitHub Releases.
 - Staging feedback tells the truth about the common misfires: staging an
   already-staged hunk says so (instead of "changed since load"), and
   unstaging a file with nothing staged refuses up front.
+- Watch mode (issue #12): `margin -w` / `margin diff -w` reloads the
+  review automatically while an agent edits — OS file events, debounced
+  (rapid writes collapse into one reload), cursor and search kept in
+  place, `[watch]` in the status bar. External staging and new commits
+  refresh too (the index and reflog are watched; object churn is not).
+  Auto-reload never fires while the discard confirmation is open.
+  Worktree and `--staged` reviews only; static views refuse the flag.
 - Discard (issue #11): `x` removes the hunk under the cursor from the
   working tree — Margin's only destructive action, so it is guarded twice
   (ADR-0014): a prompt that only typed `yes` + Enter confirms, and a
