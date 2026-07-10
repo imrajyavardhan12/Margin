@@ -29,14 +29,20 @@ layout = "auto"            # auto | unified | split
 include_untracked = true   # show untracked files in `margin` / `margin diff`
 discard_trash = true       # back up discarded hunks to .git/margin/trash/
                            # before applying (ADR-0014); `margin undo` restores
+collapse = []              # globs to auto-collapse (za expands), on top of
+                           # built-in lockfile/generated heuristics; `*` stays
+                           # within a path segment, `**` crosses, `?` is one
+                           # char; slash-less patterns match the basename
 ```
 
 ### Repo config is display-only
 
-`.margin.toml` accepts **`theme` and `layout` only**. This is the ADR-0008
-trust rule: checking out a repository must never change what Margin *does*,
-only how it looks. Behavior keys in a repo config are an error — in
-particular, a checked-out repository can never disable discard backups.
+`.margin.toml` accepts **`theme`, `layout`, and `collapse` only**. This is
+the ADR-0008 trust rule: checking out a repository must never change what
+Margin *does*, only how it looks. (`collapse` qualifies: folding hides no
+content permanently — `za` reopens anything.) Behavior keys in a repo
+config are an error — in particular, a checked-out repository can never
+disable discard backups.
 
 ## Environment
 

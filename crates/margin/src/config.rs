@@ -47,14 +47,20 @@ struct UserFile {
     /// Deliberately absent from [`RepoFile`]: a checked-out repository
     /// must never be able to disable backups.
     discard_trash: Option<bool>,
+    /// Globs of paths to auto-collapse (issue #21), on top of the
+    /// built-in generated-file heuristics.
+    collapse: Option<Vec<String>>,
 }
 
 /// The repo-local `.margin.toml`: display options only, by schema (ADR-0008).
+/// `collapse` qualifies — folding rows hides nothing permanently and
+/// changes no behavior — so projects can fold their own generated files.
 #[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct RepoFile {
     theme: Option<String>,
     layout: Option<LayoutChoice>,
+    collapse: Option<Vec<String>>,
 }
 
 /// The merged result the rest of the binary consumes.
@@ -64,6 +70,7 @@ pub struct Config {
     pub layout: LayoutChoice,
     pub include_untracked: bool,
     pub discard_trash: bool,
+    pub collapse: Vec<String>,
 }
 
 impl Default for Config {
@@ -73,6 +80,7 @@ impl Default for Config {
             layout: LayoutChoice::Auto,
             include_untracked: true,
             discard_trash: true,
+            collapse: Vec::new(),
         }
     }
 }
@@ -96,6 +104,7 @@ impl Config {
                 merge_opt(&mut config.layout, user.layout);
                 merge_opt(&mut config.include_untracked, user.include_untracked);
                 merge_opt(&mut config.discard_trash, user.discard_trash);
+                merge_opt(&mut config.collapse, user.collapse);
             }
         }
         if let Some(dir) = repo_dir {
@@ -103,6 +112,7 @@ impl Config {
                 let repo: RepoFile = read_toml(&path)?;
                 merge(&mut config.theme, repo.theme);
                 merge_opt(&mut config.layout, repo.layout);
+                merge_opt(&mut config.collapse, repo.collapse);
             }
         }
         if let Some(theme) = flag_theme {
@@ -121,8 +131,14 @@ impl Config {
             LayoutChoice::Unified => "unified",
             LayoutChoice::Split => "split",
         };
+        let collapse = self
+            .collapse
+            .iter()
+            .map(|g| format!("\"{g}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
         format!(
-            "theme = \"{}\"\nlayout = \"{}\"\ninclude_untracked = {}\ndiscard_trash = {}\n",
+            "theme = \"{}\"\nlayout = \"{}\"\ninclude_untracked = {}\ndiscard_trash = {}\ncollapse = [{collapse}]\n",
             self.theme, layout, self.include_untracked, self.discard_trash
         )
     }
@@ -297,6 +313,25 @@ mod tests {
             find_repo_config(&free),
             Some(dir.path().join(".margin.toml"))
         );
+    }
+
+    #[test]
+    fn collapse_globs_merge_from_both_files() {
+        // Display option: allowed in the repo file too (ADR-0008), so a
+        // project can fold its own generated paths for every viewer.
+        let dir = tempfile::tempdir().unwrap();
+        let user = dir.path().join("config.toml");
+        std::fs::write(&user, "collapse = [\"*.snap\"]\n").unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(repo.join(".margin.toml"), "collapse = [\"gen/**\"]\n").unwrap();
+
+        let config = Config::load(Some(&user), Some(&repo), None, None).unwrap();
+        assert_eq!(config.collapse, vec!["gen/**"], "later wins, like theme");
+
+        let user_only = Config::load(Some(&user), None, None, None).unwrap();
+        assert_eq!(user_only.collapse, vec!["*.snap"]);
+        assert!(Config::default().collapse.is_empty());
     }
 
     #[test]

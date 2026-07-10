@@ -89,8 +89,14 @@ fn file_header(state: &AppState, file: usize, marker: &str) -> TLine<'static> {
     let Some(diff) = state.changeset.files.get(file) else {
         return TLine::from(marker.to_string());
     };
+    // Collapsed files carry a fold marker; counts stay visible (#21).
+    let fold = if state.is_collapsed(file) {
+        "\u{25b8} "
+    } else {
+        ""
+    };
     let mut text = format!(
-        "{marker}{} {}  +{} -{}",
+        "{marker}{fold}{} {}  +{} -{}",
         status_glyph(diff.status),
         file_label(diff),
         diff.additions(),

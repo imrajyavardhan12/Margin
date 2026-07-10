@@ -16,6 +16,17 @@ pub fn msg_for_key(key: KeyEvent, mode: InputMode) -> Option<Msg> {
         InputMode::Search => search(key),
         InputMode::Picker => picker(key, ctrl),
         InputMode::Confirm => confirm(key),
+        InputMode::Fold => fold(key),
+    }
+}
+
+/// Second key of the `z` fold chord: `a` toggles the file, `A` toggles
+/// all; anything else breaks the chord.
+fn fold(key: KeyEvent) -> Option<Msg> {
+    match key.code {
+        KeyCode::Char('a') => Some(Msg::ToggleFold),
+        KeyCode::Char('A') => Some(Msg::ToggleFoldAll),
+        _ => Some(Msg::FoldCancel),
     }
 }
 
@@ -43,6 +54,7 @@ fn normal(key: KeyEvent, ctrl: bool) -> Option<Msg> {
         KeyCode::Char('u') => Some(Msg::UnstageHunk),
         KeyCode::Char('x') => Some(Msg::DiscardHunk),
         KeyCode::Char('r') => Some(Msg::Reload),
+        KeyCode::Char('z') => Some(Msg::ZKey),
         KeyCode::Char('v') => Some(Msg::ToggleLayout),
         KeyCode::Char('w') => Some(Msg::ToggleWrap),
         KeyCode::Char('b') => Some(Msg::ToggleSidebar),
@@ -128,6 +140,29 @@ mod tests {
         assert_eq!(
             normal(KeyCode::Char('x'), KeyModifiers::NONE),
             Some(Msg::DiscardHunk)
+        );
+        assert_eq!(
+            normal(KeyCode::Char('z'), KeyModifiers::NONE),
+            Some(Msg::ZKey)
+        );
+        // The fold chord's second key.
+        let fold = |code, mods| msg_for_key(key(code, mods), InputMode::Fold);
+        assert_eq!(
+            fold(KeyCode::Char('a'), KeyModifiers::NONE),
+            Some(Msg::ToggleFold)
+        );
+        assert_eq!(
+            fold(KeyCode::Char('A'), KeyModifiers::SHIFT),
+            Some(Msg::ToggleFoldAll)
+        );
+        assert_eq!(
+            fold(KeyCode::Char('j'), KeyModifiers::NONE),
+            Some(Msg::FoldCancel),
+            "any other key breaks the chord"
+        );
+        assert_eq!(
+            fold(KeyCode::Esc, KeyModifiers::NONE),
+            Some(Msg::FoldCancel)
         );
         assert_eq!(
             normal(KeyCode::Char('u'), KeyModifiers::CONTROL),

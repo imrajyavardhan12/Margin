@@ -23,6 +23,7 @@ a deprecation cycle, and custom keymaps are planned post-v0.3.
 |---|---|
 | `v` | switch unified / side-by-side (pins your choice over the width-based auto layout) |
 | `w` | toggle line wrap (off clips long lines; wrapped rows scroll as one unit) |
+| `za` / `zA` | collapse the cursor's file / everything (vim folds). Lockfiles and generated bundles fold automatically; the `collapse` config globs extend the list. Collapsed files show a `▸` header with counts; navigation skips their bodies. |
 | `b` | toggle the file sidebar |
 | `?` | toggle help |
 | `Esc` | close help, then clear the active search |

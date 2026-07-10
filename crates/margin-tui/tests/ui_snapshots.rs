@@ -7,6 +7,7 @@
 
 use insta::assert_snapshot;
 use margin_core::parse_unified;
+use margin_tui::app::Row;
 use margin_tui::{
     render_view, update, AppState, Command, CommandResult, HunkAction, Msg, StagedFiles,
 };
@@ -535,6 +536,147 @@ fn discard_cancels_and_refuses_safely() {
         }),
     );
     assert!(render(&mut state, 80, 24).contains("backup disabled"));
+}
+
+/// A changeset where a lockfile dwarfs the real change (issue #21).
+const WITH_LOCKFILE: &str = "\
+diff --git a/src/app.rs b/src/app.rs
+index 1111111..2222222 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -1,2 +1,2 @@
+ fn keep() {}
+-fn old() {}
++fn renamed() {}
+diff --git a/Cargo.lock b/Cargo.lock
+index 3333333..4444444 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1,4 +1,4 @@
+ [[package]]
+ name = \"serde\"
+-version = \"1.0.1\"
++version = \"1.0.2\"
+ checksum = \"abc\"
+";
+
+fn lockfile_state() -> AppState {
+    let outcome = parse_unified(WITH_LOCKFILE.as_bytes());
+    assert!(outcome.warnings.is_empty(), "fixture must parse cleanly");
+    AppState::new(outcome.changeset)
+}
+
+/// Lockfiles fold on load: header only (with the fold marker and counts),
+/// body rows never built — navigation skips them by construction.
+#[test]
+fn lockfile_auto_collapses_to_header_only() {
+    let mut state = lockfile_state();
+    assert_eq!(
+        state.rows.iter().filter(|r| r.file() == 1).count(),
+        1,
+        "collapsed file contributes exactly its header row"
+    );
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains('\u{25b8}'), "fold marker shows: {frame}");
+    assert!(
+        frame.contains("Cargo.lock  +1 -1"),
+        "counts stay visible: {frame}"
+    );
+    assert!(!frame.contains("serde"), "body stays hidden: {frame}");
+    assert_snapshot!(frame);
+
+    // J from the first file's hunk jumps clean over the folded body.
+    update(&mut state, Msg::Bottom);
+    assert!(
+        matches!(state.rows[state.cursor], Row::FileHeader { file: 1 }),
+        "the folded file ends at its header"
+    );
+}
+
+/// `za` on the folded header expands it; `za` again folds it back.
+#[test]
+fn za_toggles_the_cursor_file() {
+    let mut state = lockfile_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::Bottom); // the collapsed lockfile header
+
+    update(&mut state, Msg::ZKey);
+    assert_eq!(state.input_mode(), margin_tui::app::InputMode::Fold);
+    update(&mut state, Msg::ToggleFold);
+    assert_eq!(state.input_mode(), margin_tui::app::InputMode::Normal);
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("serde"), "expanded body renders: {frame}");
+    assert!(
+        matches!(state.rows[state.cursor], Row::FileHeader { file: 1 }),
+        "cursor stays on the toggled file's header"
+    );
+
+    update(&mut state, Msg::ZKey);
+    update(&mut state, Msg::ToggleFold);
+    assert!(!render(&mut state, 80, 24).contains("serde"));
+
+    // Any non-fold key breaks the chord without side effects.
+    update(&mut state, Msg::ZKey);
+    update(&mut state, Msg::FoldCancel);
+    assert_eq!(state.input_mode(), margin_tui::app::InputMode::Normal);
+}
+
+/// `zA` folds everything while anything is expanded, then unfolds all.
+#[test]
+fn za_all_toggles_everything() {
+    let mut state = lockfile_state();
+    update(&mut state, Msg::Resize(80, 24));
+
+    update(&mut state, Msg::ToggleFoldAll);
+    assert_eq!(
+        state.rows.len(),
+        2,
+        "all collapsed: two header rows only, got {:?}",
+        state.rows
+    );
+
+    update(&mut state, Msg::ToggleFoldAll);
+    assert!(
+        state.rows.len() > 2,
+        "everything folded, so zA expands all — even the lockfile"
+    );
+    assert!(render(&mut state, 80, 24).contains("serde"));
+}
+
+/// The user's fold choice survives a reload (watch mode reloads often).
+#[test]
+fn fold_overrides_survive_reload() {
+    let mut state = lockfile_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::Bottom);
+    update(&mut state, Msg::ZKey);
+    update(&mut state, Msg::ToggleFold); // expand the lockfile
+
+    let reloaded = state.changeset.clone();
+    update(
+        &mut state,
+        Msg::CommandFinished(CommandResult::Reloaded {
+            changeset: reloaded,
+            staged: None,
+        }),
+    );
+    assert!(
+        render(&mut state, 80, 24).contains("serde"),
+        "an explicitly expanded file must not re-fold on reload"
+    );
+}
+
+/// Config globs extend the built-in heuristics.
+#[test]
+fn collapse_globs_fold_matching_files() {
+    let mut state = sample_state(); // has docs/NOTES.md
+    state.set_collapse_globs(vec!["*.md".into()]);
+    let frame = render(&mut state, 80, 24);
+    assert!(
+        !frame.contains("remember the milk"),
+        "globbed file folds: {frame}"
+    );
+    assert!(frame.contains("NOTES.md"), "its header stays: {frame}");
 }
 
 /// Watch mode announces itself in the status bar like [split]/[wrap].

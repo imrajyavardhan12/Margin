@@ -549,6 +549,7 @@ fn show(
     let mut state = AppState::new(changeset);
     state.apply_theme(session.theme.clone());
     state.set_layout_mode(session.config.layout.into());
+    state.set_collapse_globs(session.config.collapse.clone());
     state.staged = staged;
     state.watching = watch.is_some();
     match margin_tui::run(&mut state, executor, watch) {

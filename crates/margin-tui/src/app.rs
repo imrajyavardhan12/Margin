@@ -120,6 +120,8 @@ pub enum InputMode {
     Search,
     Picker,
     Confirm,
+    /// After `z`: the next key resolves the fold chord (`za`/`zA`).
+    Fold,
 }
 
 /// Which write the selected hunk should request. `Stage`/`Unstage` are
@@ -169,7 +171,7 @@ impl StagedFiles {
             paths: changeset
                 .files
                 .iter()
-                .filter_map(staged_path_key)
+                .filter_map(path_key)
                 .map(<[u8]>::to_vec)
                 .collect(),
         }
@@ -177,14 +179,15 @@ impl StagedFiles {
 
     /// Whether this file (from the review) has staged content.
     pub fn is_staged(&self, file: &FileDiff) -> bool {
-        staged_path_key(file).is_some_and(|key| self.paths.contains(key))
+        path_key(file).is_some_and(|key| self.paths.contains(key))
     }
 }
 
-/// The byte path that identifies a file across the worktree and index
-/// diffs: the new side, falling back to the old (deleted files) — mirroring
-/// `FileDiff::display_path`'s choice, but on raw bytes so the match is exact.
-fn staged_path_key(file: &FileDiff) -> Option<&[u8]> {
+/// The byte path that identifies a file across diffs and reloads: the new
+/// side, falling back to the old (deleted files) — mirroring
+/// `FileDiff::display_path`'s choice, but on raw bytes so the match is
+/// exact. Keys the staged summary and the fold (collapse) state.
+fn path_key(file: &FileDiff) -> Option<&[u8]> {
     file.new_path.as_deref().or(file.old_path.as_deref())
 }
 
@@ -260,6 +263,14 @@ pub enum Msg {
     ConfirmCancel,
     /// `r`: re-read the changeset from the source.
     Reload,
+    /// First key of the `za`/`zA` fold chord.
+    ZKey,
+    /// `za`: toggle the cursor's file collapsed.
+    ToggleFold,
+    /// `zA`: collapse everything, or expand everything when nothing is.
+    ToggleFoldAll,
+    /// Any other key after `z`: break the chord.
+    FoldCancel,
     /// The runtime reporting a command's outcome.
     CommandFinished(CommandResult),
     CursorDown,
@@ -337,6 +348,14 @@ pub struct AppState {
     /// Watch mode (`-w`): the status bar shows `[watch]` and the runtime
     /// feeds debounced reloads. Set by the binary at startup.
     pub watching: bool,
+    /// Fold (collapse) state per file, keyed by canonical byte path so it
+    /// survives reloads (issue #21). Every current file has an entry.
+    fold: std::collections::HashMap<Vec<u8>, bool>,
+    /// User/repo `collapse` globs; combined with the built-in heuristics
+    /// they decide the default fold for files not seen before.
+    collapse_globs: Vec<String>,
+    /// True between `z` and the chord's second key.
+    pub pending_z: bool,
 }
 
 impl AppState {
@@ -362,10 +381,82 @@ impl AppState {
             picker: None,
             confirm: None,
             watching: false,
+            fold: std::collections::HashMap::new(),
+            collapse_globs: Vec::new(),
+            pending_z: false,
         };
-        state.rows = build_rows(&state.changeset, state.split_active);
+        state.reset_folds();
+        let flags = state.collapsed_flags();
+        state.rows = build_rows(&state.changeset, state.split_active, &flags);
         state.refresh_layout();
         state
+    }
+
+    /// Set the `collapse` globs (from config) and re-derive every file's
+    /// default fold. Called by the binary at startup, before interaction.
+    pub fn set_collapse_globs(&mut self, globs: Vec<String>) {
+        self.collapse_globs = globs;
+        self.reset_folds();
+        let file = self.current_file();
+        self.rebuild_rows_after_fold(file);
+    }
+
+    /// Default fold for a file: built-in generated-file heuristics plus
+    /// the configured globs (issue #21).
+    fn auto_collapsed(&self, file: &FileDiff) -> bool {
+        let Some(key) = path_key(file) else {
+            return false;
+        };
+        margin_core::is_generated(key)
+            || self
+                .collapse_globs
+                .iter()
+                .any(|glob| margin_core::glob_match(glob, key))
+    }
+
+    /// Re-derive every file's fold from the defaults (startup/config).
+    fn reset_folds(&mut self) {
+        let fold = self
+            .changeset
+            .files
+            .iter()
+            .filter_map(|f| path_key(f).map(|k| (k.to_vec(), self.auto_collapsed(f))))
+            .collect();
+        self.fold = fold;
+    }
+
+    /// Whether this file renders header-only right now.
+    pub fn is_collapsed(&self, file: usize) -> bool {
+        self.changeset
+            .files
+            .get(file)
+            .and_then(path_key)
+            .is_some_and(|k| self.fold.get(k).copied().unwrap_or(false))
+    }
+
+    fn collapsed_flags(&self) -> Vec<bool> {
+        (0..self.changeset.files.len())
+            .map(|i| self.is_collapsed(i))
+            .collect()
+    }
+
+    /// Rebuild rows after fold changes, keeping the cursor on `file`'s
+    /// header — the body it may have been in can vanish.
+    fn rebuild_rows_after_fold(&mut self, file: Option<usize>) {
+        let flags = self.collapsed_flags();
+        self.rows = build_rows(&self.changeset, self.split_active, &flags);
+        if let Some(file) = file {
+            self.cursor = self
+                .rows
+                .iter()
+                .position(|r| matches!(r, Row::FileHeader { file: f } if *f == file))
+                .unwrap_or(0);
+        }
+        self.clamp_cursor();
+        // Match rows are indices into the rebuilt stream: recompute.
+        if let Some(search) = &mut self.search {
+            recompute_matches(search, &self.rows, &self.changeset);
+        }
     }
 
     /// Swap the visual theme, rebuilding the highlight cache so syntax
@@ -404,6 +495,8 @@ impl AppState {
             InputMode::Picker
         } else if self.search.as_ref().is_some_and(|s| s.typing) {
             InputMode::Search
+        } else if self.pending_z {
+            InputMode::Fold
         } else {
             InputMode::Normal
         }
@@ -440,7 +533,8 @@ impl AppState {
         }
         let anchor = self.rows.get(self.cursor).copied();
         self.split_active = split;
-        self.rows = build_rows(&self.changeset, split);
+        let flags = self.collapsed_flags();
+        self.rows = build_rows(&self.changeset, split, &flags);
         self.cursor = anchor.map_or(0, |a| locate(&self.rows, a));
         self.clamp_cursor();
         // Match rows are layout-specific indices: recompute.
@@ -720,7 +814,26 @@ impl AppState {
         let anchor = self.rows.get(self.cursor).copied();
         self.changeset = changeset;
         self.staged = staged;
-        self.rows = build_rows(&self.changeset, self.split_active);
+        // Fold state survives the reload by path: a file the user expanded
+        // stays expanded; files appearing for the first time get defaults.
+        let fold = self
+            .changeset
+            .files
+            .iter()
+            .filter_map(|f| {
+                path_key(f).map(|k| {
+                    let collapsed = self
+                        .fold
+                        .get(k)
+                        .copied()
+                        .unwrap_or_else(|| self.auto_collapsed(f));
+                    (k.to_vec(), collapsed)
+                })
+            })
+            .collect();
+        self.fold = fold;
+        let flags = self.collapsed_flags();
+        self.rows = build_rows(&self.changeset, self.split_active, &flags);
         self.cursor = anchor.map_or(0, |a| locate(&self.rows, a));
         self.clamp_cursor();
         self.highlight = crate::highlight::HighlightCache::new(self.theme.syntax_theme);
@@ -829,6 +942,30 @@ pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
         // Always issued, even on an empty changeset — a reload may be
         // exactly what brings changes into view.
         Msg::Reload => command = Some(Command::Reload),
+        Msg::ZKey => state.pending_z = true,
+        Msg::FoldCancel => state.pending_z = false,
+        Msg::ToggleFold => {
+            state.pending_z = false;
+            if let Some(file) = state.current_file() {
+                if let Some(key) = state.changeset.files.get(file).and_then(path_key) {
+                    let key = key.to_vec();
+                    let entry = state.fold.entry(key).or_insert(false);
+                    *entry = !*entry;
+                }
+                state.rebuild_rows_after_fold(Some(file));
+            }
+        }
+        Msg::ToggleFoldAll => {
+            state.pending_z = false;
+            let file = state.current_file();
+            // Any expanded file means "collapse everything"; only when
+            // all are folded does zA expand everything back.
+            let target = state.fold.values().any(|&collapsed| !collapsed);
+            for collapsed in state.fold.values_mut() {
+                *collapsed = target;
+            }
+            state.rebuild_rows_after_fold(file);
+        }
         Msg::CommandFinished(result) => state.finish_command(result),
         Msg::CursorDown => {
             state.cursor = state.cursor.saturating_add(1);
@@ -1086,10 +1223,15 @@ fn fuzzy_score(query: &str, target: &str) -> Option<i64> {
 }
 
 /// Flatten a changeset into the navigable review stream for one layout.
-fn build_rows(changeset: &Changeset, split: bool) -> Vec<Row> {
+/// Collapsed files contribute their header only — the body rows never
+/// exist, so navigation and scroll math skip them by construction.
+fn build_rows(changeset: &Changeset, split: bool, collapsed: &[bool]) -> Vec<Row> {
     let mut rows = Vec::new();
     for (file, diff) in changeset.files.iter().enumerate() {
         rows.push(Row::FileHeader { file });
+        if collapsed.get(file).copied().unwrap_or(false) {
+            continue;
+        }
         if diff.hunks.is_empty() {
             rows.push(Row::Meta { file });
         }

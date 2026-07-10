@@ -21,6 +21,13 @@ release notes are hand-curated on top in GitHub Releases.
 - Staging feedback tells the truth about the common misfires: staging an
   already-staged hunk says so (instead of "changed since load"), and
   unstaging a file with nothing staged refuses up front.
+- Collapse (issue #21): `za` folds the cursor's file to its header
+  (counts stay visible), `zA` folds or unfolds everything. Lockfiles
+  (`Cargo.lock`, `package-lock.json`, `go.sum`, ...) and generated
+  artifacts (`*.min.js`, `*.pb.go`, source maps, ...) fold automatically;
+  the `collapse` config key (user or repo — it is a display option)
+  adds globs. Navigation skips folded bodies, search never matches
+  inside them, and fold choices survive watch-mode reloads.
 - Watch mode (issue #12): `margin -w` / `margin diff -w` reloads the
   review automatically while an agent edits — OS file events, debounced
   (rapid writes collapse into one reload), cursor and search kept in

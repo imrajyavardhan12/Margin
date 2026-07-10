@@ -21,6 +21,7 @@ const KEYS: &[(&str, &str)] = &[
     ("r", "reload the diff"),
     ("v", "toggle unified / side-by-side"),
     ("w", "toggle line wrap"),
+    ("za / zA", "collapse file / all files"),
     ("b", "toggle sidebar"),
     ("?", "toggle this help"),
     ("q", "quit"),
