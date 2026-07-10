@@ -3,15 +3,14 @@ source: crates/margin-tui/tests/ui_snapshots.rs
 expression: "render(&mut state, 80, 24)"
 ---
  FILES (4)                ▌M src/app.rs  +4 -2
-▌ M src/app.rs       +4 -2 @@ -1,5 +1,6 @@ fn setup()
-  A docs/NOTES.md ┌ margin — keys ───────────────────────────┐
-  M assets/logo.pn│                                          │
-  R new/path.txt  │  j / k            move down / up         │
-                  │  J / K            next / previous hunk   │
+▌ M src/app.rs    ┌ margin — keys ───────────────────────────┐
+  A docs/NOTES.md │                                          │
+  M assets/logo.pn│  j / k            move down / up         │
+  R new/path.txt  │  J / K            next / previous hunk   │
                   │  ] / [            next / previous file   │
-                  │  gg / G           top / bottom           │ar("PROFILE");
-                  │  Ctrl-d / Ctrl-u  half page down / up    │f().unwrap_or("def
-                  │  /                search (regex, smart-ca│
+                  │  gg / G           top / bottom           │
+                  │  Ctrl-d / Ctrl-u  half page down / up    │ar("PROFILE");
+                  │  /                search (regex, smart-ca│f().unwrap_or("def
                   │  n / N            next / previous match  │
                   │  f                jump to file (fuzzy)   │
                   │  s / u            stage / unstage hunk   │
@@ -19,6 +18,7 @@ expression: "render(&mut state, 80, 24)"
                   │  r                reload the diff        │
                   │  v                toggle unified / side-b│
                   │  w                toggle line wrap       │
+                  │  za / zA          collapse file / all fil│
                   │  b                toggle sidebar         │
                   │  ?                toggle this help       │
                   │  q                quit                   │

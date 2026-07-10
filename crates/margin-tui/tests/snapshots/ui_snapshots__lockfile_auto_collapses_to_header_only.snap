@@ -1,0 +1,28 @@
+---
+source: crates/margin-tui/tests/ui_snapshots.rs
+expression: frame
+---
+ FILES (2)                ▌M src/app.rs  +1 -1
+▌ M src/app.rs       +1 -1 @@ -1,2 +1,2 @@
+  M Cargo.lock       +1 -1    1    1  fn keep() {}
+                              2      -fn old() {}
+                                   2 +fn renamed() {}
+                           ▸ M Cargo.lock  +1 -1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ src/app.rs  1/6 j/k  J/K hunk  ]/[ file  / search  f jump  v layout  ? help  q
