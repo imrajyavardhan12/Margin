@@ -5,6 +5,12 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-12
+
+The first stable release. Everything from the release candidate, plus the
+"act on the diff" feature set: stage, unstage, discard (with undo), reload,
+watch mode, and collapse.
+
 ### Added
 
 - Act on the diff (issue #10): `s` stages and `u` unstages the hunk under
