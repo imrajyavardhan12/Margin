@@ -25,7 +25,7 @@ mod staging;
 
 pub use discard::{apply_patch_to_worktree, undo_last_discard, write_trash, UndoError};
 pub use files::TwoFiles;
-pub use git::{GitRevRange, GitShow, GitStaged, GitWorktree};
+pub use git::{workdir_root, GitRevRange, GitShow, GitStaged, GitWorktree};
 pub use staging::{apply_patch_to_index, StageError};
 
 use margin_core::Changeset;

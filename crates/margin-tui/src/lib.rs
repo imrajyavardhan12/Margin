@@ -36,5 +36,5 @@ pub use app::{
     update, AppState, Command, CommandExecutor, CommandResult, ConfirmState, HunkAction, Msg,
     StagedFiles,
 };
-pub use runtime::run;
+pub use runtime::{run, WatchHandle};
 pub use view::view as render_view;

@@ -306,6 +306,23 @@ fn undo_restores_the_seeded_trash_entry() {
 }
 
 #[test]
+fn watch_refuses_static_views() {
+    // Ranges and file pairs have nothing live to watch: exit 2 before
+    // any repo access, so this needs no repository at all.
+    let dir = tempfile::tempdir().unwrap();
+    let out = margin()
+        .current_dir(dir.path())
+        .args(["diff", "-w", "a..b"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--watch"),
+        "the refusal names the flag"
+    );
+}
+
+#[test]
 fn undo_outside_a_repo_exits_2() {
     let dir = tempfile::tempdir().unwrap();
     let out = margin()

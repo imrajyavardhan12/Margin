@@ -59,6 +59,7 @@ switch to `latest` once v0.1.0 ships.)
 
 ```bash
 margin                        # review working-tree changes (untracked included)
+margin -w                     # ...and auto-reload as your agent edits
 margin diff --staged          # review what's staged
 margin show HEAD~1            # review a commit
 margin diff main..feature     # review a range

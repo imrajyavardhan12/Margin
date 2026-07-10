@@ -3,7 +3,8 @@
 //! leave the user's terminal in raw mode).
 
 use std::io;
-use std::sync::Once;
+use std::sync::{Mutex, Once};
+use std::time::{Duration, Instant};
 
 use crossterm::event::{Event, KeyEventKind};
 use crossterm::terminal::{
@@ -16,9 +17,68 @@ use crate::app::{update, AppState, CommandExecutor, Msg};
 use crate::keymap::msg_for_key;
 use crate::view::view;
 
+/// Debounced "the world changed" signal for watch mode (issue #12).
+///
+/// The binary's file-system watcher calls [`WatchHandle::notify`] from its
+/// event thread; the event loop polls [`WatchHandle::take_due`] and issues
+/// one `Msg::Reload` — the same message as `r`, so auto-reload is the
+/// existing `DiffSource` capability, not a TUI special case — once a quiet
+/// window has passed since the *last* event. Rapid agent writes collapse
+/// into a single reload: no storms.
+///
+/// std-only by design: margin-tui knows nothing about how events are
+/// produced (same inversion as `CommandExecutor`).
+pub struct WatchHandle {
+    last_event: Mutex<Option<Instant>>,
+    window: Duration,
+}
+
+impl WatchHandle {
+    pub fn new(window: Duration) -> Self {
+        Self {
+            last_event: Mutex::new(None),
+            window,
+        }
+    }
+
+    /// Record a file-system event (called from the watcher thread).
+    pub fn notify(&self) {
+        self.notify_at(Instant::now());
+    }
+
+    /// Consume the pending signal if the quiet window has elapsed.
+    pub fn take_due(&self) -> bool {
+        self.take_due_at(Instant::now())
+    }
+
+    fn notify_at(&self, at: Instant) {
+        if let Ok(mut last) = self.last_event.lock() {
+            *last = Some(at);
+        }
+    }
+
+    fn take_due_at(&self, now: Instant) -> bool {
+        let Ok(mut last) = self.last_event.lock() else {
+            return false;
+        };
+        match *last {
+            Some(at) if now.duration_since(at) >= self.window => {
+                *last = None;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 /// Run the review session to completion (user quit) or error. The
-/// executor performs any side effects `update` requests (ADR-0013).
-pub fn run(state: &mut AppState, executor: &mut dyn CommandExecutor) -> io::Result<()> {
+/// executor performs any side effects `update` requests (ADR-0013);
+/// `watch`, when present, feeds debounced reloads (issue #12).
+pub fn run(
+    state: &mut AppState,
+    executor: &mut dyn CommandExecutor,
+    watch: Option<&WatchHandle>,
+) -> io::Result<()> {
     install_panic_hook();
     enable_raw_mode()?;
     crossterm::execute!(io::stdout(), EnterAlternateScreen)?;
@@ -27,7 +87,7 @@ pub fn run(state: &mut AppState, executor: &mut dyn CommandExecutor) -> io::Resu
     let size = terminal.size()?;
     update(state, Msg::Resize(size.width, size.height));
 
-    let result = event_loop(&mut terminal, state, executor);
+    let result = event_loop(&mut terminal, state, executor, watch);
     restore_terminal()?;
     result
 }
@@ -45,23 +105,32 @@ fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &mut AppState,
     executor: &mut dyn CommandExecutor,
+    watch: Option<&WatchHandle>,
 ) -> io::Result<()> {
     loop {
         terminal.draw(|frame| view(state, frame))?;
         if state.should_quit {
             return Ok(());
         }
-        // While highlighting work is pending (budget ran out mid-frame),
-        // poll with a short timeout so fill-in frames happen without input;
-        // otherwise block on read at zero CPU.
-        let event = if state.highlight.has_pending() {
-            if crossterm::event::poll(std::time::Duration::from_millis(25))? {
-                Some(crossterm::event::read()?)
-            } else {
-                None // timeout: redraw to let the cache make progress
-            }
+        // Pick how long to wait for input. Pending highlight work wants
+        // fast fill-in frames; watch mode needs periodic wake-ups to check
+        // the debounce; otherwise block on read at zero CPU.
+        let timeout = if state.highlight.has_pending() {
+            Some(Duration::from_millis(25))
+        } else if watch.is_some() {
+            Some(Duration::from_millis(100))
         } else {
-            Some(crossterm::event::read()?)
+            None
+        };
+        let event = match timeout {
+            Some(timeout) => {
+                if crossterm::event::poll(timeout)? {
+                    Some(crossterm::event::read()?)
+                } else {
+                    None // timeout: fall through to redraw / watch check
+                }
+            }
+            None => Some(crossterm::event::read()?),
         };
         match event {
             // Windows terminals also deliver Release/Repeat events;
@@ -75,6 +144,14 @@ fn event_loop(
                 dispatch(state, Msg::Resize(width, height), executor)
             }
             _ => {}
+        }
+        // After input (or a tick): a debounced watch signal becomes the
+        // same reload `r` performs. Skipped while a prompt is open — a
+        // reload must never yank state out from under typed confirmation.
+        if let Some(handle) = watch {
+            if state.confirm.is_none() && handle.take_due() {
+                dispatch(state, Msg::Reload, executor);
+            }
         }
     }
 }
@@ -101,4 +178,53 @@ fn install_panic_hook() {
             );
         }));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const WINDOW: Duration = Duration::from_millis(200);
+
+    #[test]
+    fn debounce_waits_for_quiet_then_fires_once() {
+        let handle = WatchHandle::new(WINDOW);
+        let t0 = Instant::now();
+        assert!(!handle.take_due_at(t0), "no events yet");
+
+        handle.notify_at(t0);
+        assert!(
+            !handle.take_due_at(t0 + Duration::from_millis(100)),
+            "inside the quiet window"
+        );
+        assert!(
+            handle.take_due_at(t0 + Duration::from_millis(200)),
+            "window elapsed"
+        );
+        assert!(
+            !handle.take_due_at(t0 + Duration::from_millis(400)),
+            "signal is consumed: one reload per burst"
+        );
+    }
+
+    #[test]
+    fn rapid_writes_collapse_into_one_reload() {
+        let handle = WatchHandle::new(WINDOW);
+        let t0 = Instant::now();
+        // An agent writing every 50ms for a second: each event re-arms
+        // the window, so nothing fires mid-storm...
+        let mut fired = 0;
+        for i in 0..20 {
+            let at = t0 + Duration::from_millis(50 * i);
+            handle.notify_at(at);
+            if handle.take_due_at(at + Duration::from_millis(50)) {
+                fired += 1;
+            }
+        }
+        assert_eq!(fired, 0, "no reload storms during rapid writes");
+        // ...and quiescence yields exactly one reload.
+        let quiet = t0 + Duration::from_millis(50 * 19 + 200);
+        assert!(handle.take_due_at(quiet));
+        assert!(!handle.take_due_at(quiet + WINDOW));
+    }
 }
