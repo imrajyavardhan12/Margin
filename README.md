@@ -42,12 +42,12 @@ brew install imrajyavardhan12/tap/margin
 # installer script (macOS / Linux)
 curl -fsSL https://github.com/imrajyavardhan12/Margin/releases/latest/download/margin-installer.sh | sh
 
-# crates.io
-cargo install margin
-
 # or build from source
 cargo install --git https://github.com/imrajyavardhan12/Margin margin
 ```
+
+(The `margin` name on crates.io belongs to an unrelated project, so there is
+no registry package — install via Homebrew, the scripts, or `--git`.)
 
 Windows (PowerShell):
 
