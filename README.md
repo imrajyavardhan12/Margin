@@ -32,12 +32,18 @@ blinking.
 
 ## Install
 
-Pre-release binaries (macOS, Linux incl. static musl, Windows) ship from
+Binaries for macOS, Linux (incl. static musl), and Windows ship from
 [GitHub Releases](https://github.com/imrajyavardhan12/Margin/releases):
 
 ```bash
+# Homebrew (macOS / Linux)
+brew install imrajyavardhan12/tap/margin
+
 # installer script (macOS / Linux)
-curl -fsSL https://github.com/imrajyavardhan12/Margin/releases/download/v0.1.0-rc.1/margin-installer.sh | sh
+curl -fsSL https://github.com/imrajyavardhan12/Margin/releases/latest/download/margin-installer.sh | sh
+
+# crates.io
+cargo install margin
 
 # or build from source
 cargo install --git https://github.com/imrajyavardhan12/Margin margin
@@ -46,14 +52,8 @@ cargo install --git https://github.com/imrajyavardhan12/Margin margin
 Windows (PowerShell):
 
 ```powershell
-irm https://github.com/imrajyavardhan12/Margin/releases/download/v0.1.0-rc.1/margin-installer.ps1 | iex
+irm https://github.com/imrajyavardhan12/Margin/releases/latest/download/margin-installer.ps1 | iex
 ```
-
-(Pre-releases are not served by GitHub's `releases/latest` URL; these links
-switch to `latest` once v0.1.0 ships.)
-
-`brew install` and `cargo install margin` (crates.io) land with v0.1.0 — see
-[ROADMAP.md](ROADMAP.md).
 
 ## Quick start
 

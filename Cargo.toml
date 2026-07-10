@@ -10,7 +10,7 @@ members = [
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.85" # MSRV policy: stable minus two releases (ADR 0011)
 license = "MIT OR Apache-2.0"
@@ -24,9 +24,9 @@ categories = ["command-line-utilities", "development-tools"]
 # Versions are deliberately decided up front (see docs/adr/) so dependency
 # choices are an architectural decision, not an accident of `cargo add`.
 [workspace.dependencies]
-margin-core = { path = "crates/margin-core", version = "0.1.0-rc.1" }
-margin-vcs = { path = "crates/margin-vcs", version = "0.1.0-rc.1" }
-margin-tui = { path = "crates/margin-tui", version = "0.1.0-rc.1" }
+margin-core = { path = "crates/margin-core", version = "0.1.0" }
+margin-vcs = { path = "crates/margin-vcs", version = "0.1.0" }
+margin-tui = { path = "crates/margin-tui", version = "0.1.0" }
 
 # TUI (ADR 0002)
 ratatui = "0.30"
