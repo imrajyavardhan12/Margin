@@ -118,6 +118,13 @@ Dependency rule (compiler-enforced, do not work around):
   `composed_line_spans` + `line_wrap_count` together; `row_height`'s
   match is deliberately exhaustive so new `Row` variants force a height
   decision.
+- **`git checkout` carries uncommitted changes across branches.** Useful
+  when you mean it; a landmine after scratch experiments — a dirty file
+  from a throwaway branch rode into a release PR via `git add -A` and
+  shipped a wrong package name in a tag (v0.1.0, withdrawn). Leaving any
+  scratch context: `git status` must be clean. Before merging: read the
+  PR's changed-file list — a one-line docs PR saying "3 files changed"
+  is a stop sign.
 - **`gh run list --limit 1` races pushes**: select CI runs by
   `--workflow ci.yml --commit $(git rev-parse HEAD)` after a short sleep.
 - Windows CI is real: key handling filters `KeyEventKind::Press` (Windows

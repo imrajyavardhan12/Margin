@@ -1,5 +1,5 @@
 [package]
-name = "margin-cli"
+name = "margin"
 description = "A fast, keyboard-first terminal diff viewer for Git changes, patches, and AI-authored code."
 version.workspace = true
 edition.workspace = true
