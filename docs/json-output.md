@@ -24,7 +24,8 @@ check the field.
 Margin's model is bytes-first; JSON strings are UTF-8. Every string in the
 document is **lossy UTF-8**: invalid bytes become U+FFFD (`�`), and any
 value that was altered carries a sibling flag — `"lossy": true` on lines,
-`"path_lossy": true` on files. The flags are omitted when false. Consumers
+`"path_lossy": true` on files, `"heading_lossy": true` on hunks. The
+flags are omitted when false. Consumers
 needing exact bytes should read the raw diff itself; the JSON view is for
 structure.
 
@@ -50,6 +51,7 @@ structure.
           "old_start": 1, "old_count": 5,
           "new_start": 1, "new_count": 6,
           "heading": "fn main()",  // the @@ ... @@ section text; OMITTED when absent
+          "heading_lossy": true,   // OMITTED unless the heading had invalid UTF-8
           "lines": [
             {
               "kind": "context",   // context | addition | deletion

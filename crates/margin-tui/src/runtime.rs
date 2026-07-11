@@ -29,14 +29,21 @@ use crate::view::view;
 /// std-only by design: margin-tui knows nothing about how events are
 /// produced (same inversion as `CommandExecutor`).
 pub struct WatchHandle {
-    last_event: Mutex<Option<Instant>>,
+    /// (first event of the pending burst, most recent event).
+    pending: Mutex<Option<(Instant, Instant)>>,
     window: Duration,
 }
+
+/// A sustained write storm (every event inside the quiet window) re-arms
+/// the debounce forever; after this many windows of continuous activity
+/// the reload fires anyway, so a long-running agent never starves the
+/// review (post-M2 review finding).
+const MAX_WAIT_WINDOWS: u32 = 8;
 
 impl WatchHandle {
     pub fn new(window: Duration) -> Self {
         Self {
-            last_event: Mutex::new(None),
+            pending: Mutex::new(None),
             window,
         }
     }
@@ -46,24 +53,29 @@ impl WatchHandle {
         self.notify_at(Instant::now());
     }
 
-    /// Consume the pending signal if the quiet window has elapsed.
+    /// Consume the pending signal once the quiet window has elapsed —
+    /// or the max wait, whichever comes first.
     pub fn take_due(&self) -> bool {
         self.take_due_at(Instant::now())
     }
 
     fn notify_at(&self, at: Instant) {
-        if let Ok(mut last) = self.last_event.lock() {
-            *last = Some(at);
+        if let Ok(mut pending) = self.pending.lock() {
+            let first = pending.map_or(at, |(first, _)| first);
+            *pending = Some((first, at));
         }
     }
 
     fn take_due_at(&self, now: Instant) -> bool {
-        let Ok(mut last) = self.last_event.lock() else {
+        let Ok(mut pending) = self.pending.lock() else {
             return false;
         };
-        match *last {
-            Some(at) if now.duration_since(at) >= self.window => {
-                *last = None;
+        match *pending {
+            Some((first, last))
+                if now.duration_since(last) >= self.window
+                    || now.duration_since(first) >= self.window * MAX_WAIT_WINDOWS =>
+            {
+                *pending = None;
                 true
             }
             _ => false,
@@ -107,8 +119,15 @@ fn event_loop(
     executor: &mut dyn CommandExecutor,
     watch: Option<&WatchHandle>,
 ) -> io::Result<()> {
+    // Draw only when something changed (or highlight fill-in is owed):
+    // watch mode wakes every 100ms to check the debounce, and re-rendering
+    // an unchanged frame at 10Hz would waste idle CPU for nothing.
+    let mut needs_draw = true;
     loop {
-        terminal.draw(|frame| view(state, frame))?;
+        if needs_draw || state.highlight.has_pending() {
+            terminal.draw(|frame| view(state, frame))?;
+            needs_draw = false;
+        }
         if state.should_quit {
             return Ok(());
         }
@@ -127,7 +146,7 @@ fn event_loop(
                 if crossterm::event::poll(timeout)? {
                     Some(crossterm::event::read()?)
                 } else {
-                    None // timeout: fall through to redraw / watch check
+                    None // timeout: fall through to the watch check
                 }
             }
             None => Some(crossterm::event::read()?),
@@ -138,19 +157,24 @@ fn event_loop(
             Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                 if let Some(msg) = msg_for_key(key, state.input_mode()) {
                     dispatch(state, msg, executor);
+                    needs_draw = true;
                 }
             }
             Some(Event::Resize(width, height)) => {
-                dispatch(state, Msg::Resize(width, height), executor)
+                dispatch(state, Msg::Resize(width, height), executor);
+                needs_draw = true;
             }
             _ => {}
         }
         // After input (or a tick): a debounced watch signal becomes the
-        // same reload `r` performs. Skipped while a prompt is open — a
-        // reload must never yank state out from under typed confirmation.
+        // same reload `r` performs. Skipped while a modal overlay is open —
+        // a reload must never yank the world out from under a typed
+        // confirmation or a picker mid-choice (the signal keeps
+        // accumulating and fires once the overlay closes).
         if let Some(handle) = watch {
-            if state.confirm.is_none() && handle.take_due() {
+            if state.confirm.is_none() && state.picker.is_none() && handle.take_due() {
                 dispatch(state, Msg::Reload, executor);
+                needs_draw = true;
             }
         }
     }
@@ -226,5 +250,33 @@ mod tests {
         let quiet = t0 + Duration::from_millis(50 * 19 + 200);
         assert!(handle.take_due_at(quiet));
         assert!(!handle.take_due_at(quiet + WINDOW));
+    }
+
+    #[test]
+    fn a_sustained_storm_cannot_starve_the_reload() {
+        // An agent writing every 50ms for minutes: the quiet window never
+        // elapses, but the max wait (8 windows = 1.6s here) fires anyway.
+        let handle = WatchHandle::new(WINDOW);
+        let t0 = Instant::now();
+        let mut fired_at = None;
+        for i in 0..100 {
+            let at = t0 + Duration::from_millis(50 * i);
+            handle.notify_at(at);
+            if handle.take_due_at(at) {
+                fired_at = Some(at);
+                break;
+            }
+        }
+        let Some(at) = fired_at else {
+            panic!("the cap must fire mid-storm");
+        };
+        let waited = at.duration_since(t0);
+        assert!(
+            waited >= WINDOW * 8 && waited < WINDOW * 9,
+            "fired after {waited:?}, expected ~8 windows"
+        );
+        // The burst tracker reset: the next event starts a fresh window.
+        handle.notify_at(at + Duration::from_millis(10));
+        assert!(!handle.take_due_at(at + Duration::from_millis(20)));
     }
 }

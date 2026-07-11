@@ -58,19 +58,32 @@ pub fn apply_patch_to_worktree(repo_path: &Path, patch: &[u8]) -> Result<(), Sta
 /// the ordering (`-1` sorts before `.patch`) and would make undo restore
 /// the wrong entry.
 pub fn write_trash(repo_path: &Path, patch: &[u8]) -> Result<PathBuf, UndoError> {
+    use std::io::Write;
     let dir = trash_dir(repo_path)?;
     std::fs::create_dir_all(&dir)?;
     let mut millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let mut path = dir.join(format!("{millis:013}.patch"));
-    while path.exists() {
-        millis += 1;
-        path = dir.join(format!("{millis:013}.patch"));
+    // create_new is the collision check *and* the create in one atomic
+    // step: an exists()-then-write window would let two same-millisecond
+    // discards (two margin instances) silently overwrite each other's
+    // backup — the one thing this module must never do (ADR-0014).
+    loop {
+        let path = dir.join(format!("{millis:013}.patch"));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                file.write_all(patch)?;
+                return Ok(path);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => millis += 1,
+            Err(err) => return Err(err.into()),
+        }
     }
-    std::fs::write(&path, patch)?;
-    Ok(path)
 }
 
 /// Restore the newest trash entry to the working tree and delete it on

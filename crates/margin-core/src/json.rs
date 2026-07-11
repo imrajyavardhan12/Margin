@@ -64,6 +64,9 @@ pub struct JsonHunk {
     /// The `@@ ... @@ heading` section text, when present.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heading: Option<String>,
+    /// True when `heading` had non-UTF-8 bytes (replaced with U+FFFD).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub heading_lossy: bool,
     pub lines: Vec<JsonLine>,
 }
 
@@ -116,15 +119,14 @@ fn json_file(file: &FileDiff) -> JsonFile {
 }
 
 fn json_hunk(hunk: &Hunk) -> JsonHunk {
+    let (heading, heading_lossy) = optional_string(hunk.heading.as_deref());
     JsonHunk {
         old_start: hunk.old_start,
         old_count: hunk.old_count,
         new_start: hunk.new_start,
         new_count: hunk.new_count,
-        heading: hunk
-            .heading
-            .as_deref()
-            .map(|h| String::from_utf8_lossy(h).into_owned()),
+        heading,
+        heading_lossy,
         lines: hunk.lines.iter().map(json_line).collect(),
     }
 }
@@ -228,6 +230,21 @@ Binary files a/logo.png and b/logo.png differ
         assert!(lines[1].lossy, "replacement characters are flagged");
         assert!(lines[1].content.contains('\u{fffd}'));
         assert!(lines[1].content.contains("bytes"), "the rest survives");
+    }
+
+    #[test]
+    fn non_utf8_headings_carry_the_flag_too() {
+        // Latin-1 source: `@@ ... @@ f\xFCnf()` — the heading is bytes.
+        let patch = b"--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@ f\xfcnf()\n-a\n+b\n";
+        let changeset = parse_unified(patch).changeset;
+        let doc = json_changeset(&changeset);
+        let hunk = &doc.files[0].hunks[0];
+        assert!(hunk.heading_lossy, "mangled heading must say so");
+        assert!(hunk.heading.as_deref().unwrap().contains('\u{fffd}'));
+
+        // And a clean heading carries none.
+        let clean = parse_unified(b"--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@ fn ok()\n-a\n+b\n").changeset;
+        assert!(!json_changeset(&clean).files[0].hunks[0].heading_lossy);
     }
 
     #[test]

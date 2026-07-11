@@ -840,6 +840,12 @@ impl AppState {
         if let Some(search) = &mut self.search {
             recompute_matches(search, &self.rows, &self.changeset);
         }
+        // The picker's filtered list holds file *indices*: stale against a
+        // reloaded changeset they would jump to whatever file now occupies
+        // the old position. Refilter against the new files.
+        if self.picker.is_some() {
+            self.refilter_picker();
+        }
     }
 
     fn ensure_cursor_visible(&mut self) {

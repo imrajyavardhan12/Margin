@@ -679,6 +679,48 @@ fn collapse_globs_fold_matching_files() {
     assert!(frame.contains("NOTES.md"), "its header stays: {frame}");
 }
 
+/// A reload while the picker is open must refilter it: `filtered` holds
+/// file *indices*, and stale indices confirm-jump to whatever file now
+/// occupies the old position (post-M2 review finding).
+#[test]
+fn reload_refilters_an_open_picker() {
+    let two = b"--- a/src/parser.rs\n+++ b/src/parser.rs\n@@ -1,1 +1,1 @@\n-a\n+b\n\
+--- a/docs/notes.md\n+++ b/docs/notes.md\n@@ -1,1 +1,1 @@\n-c\n+d\n";
+    let mut state = AppState::new(parse_unified(two).changeset);
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::PickerStart);
+    for c in "notes".chars() {
+        update(&mut state, Msg::PickerInput(c));
+    }
+    assert_eq!(
+        state.picker.as_ref().map(|p| p.filtered.clone()),
+        Some(vec![1])
+    );
+
+    // The world moves under the open picker: a new file lands first,
+    // shifting notes.md from index 1 to index 2.
+    let three = b"--- a/aaa.txt\n+++ b/aaa.txt\n@@ -1,1 +1,1 @@\n-x\n+y\n\
+--- a/src/parser.rs\n+++ b/src/parser.rs\n@@ -1,1 +1,1 @@\n-a\n+b\n\
+--- a/docs/notes.md\n+++ b/docs/notes.md\n@@ -1,1 +1,1 @@\n-c\n+d\n";
+    update(
+        &mut state,
+        Msg::CommandFinished(CommandResult::Reloaded {
+            changeset: parse_unified(three).changeset,
+            staged: None,
+        }),
+    );
+    assert_eq!(
+        state.picker.as_ref().map(|p| p.filtered.clone()),
+        Some(vec![2]),
+        "filtered indices must track the reloaded changeset"
+    );
+    update(&mut state, Msg::PickerConfirm);
+    assert!(
+        matches!(state.rows[state.cursor], Row::FileHeader { file: 2 }),
+        "confirm lands on notes.md, not whatever holds the stale index"
+    );
+}
+
 /// Watch mode announces itself in the status bar like [split]/[wrap].
 #[test]
 fn watch_badge_shows_when_watching() {

@@ -5,6 +5,21 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- Watch mode no longer reloads while the fuzzy picker is open (the world
+  shifting under a half-made choice could jump to the wrong file), and a
+  reload that does happen refilters an open picker against the new
+  changeset instead of leaving stale indices.
+- Watch mode's debounce now has a maximum wait: a sustained write storm
+  (an agent writing continuously) can no longer starve the reload — after
+  ~8 quiet-windows of continuous activity the review refreshes anyway.
+- Discard backups are written with an atomic create-new, closing a window
+  where two same-millisecond discards from different margin instances
+  could silently overwrite each other's trash entry.
+- Watch mode no longer re-renders an unchanged frame ten times a second
+  while idle.
+
 ### Added
 
 - JSON output (issue #22): `--json` on `diff`, `show`, and `patch` emits
