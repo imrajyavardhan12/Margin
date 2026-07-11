@@ -3,10 +3,10 @@ source: crates/margin-tui/tests/ui_snapshots.rs
 expression: "render(&mut state, 80, 24)"
 ---
  FILES (4)                ▌M src/app.rs  +4 -2
-▌ M src/app.rs    ┌ margin — keys ───────────────────────────┐
-  A docs/NOTES.md │                                          │
-  M assets/logo.pn│  j / k            move down / up         │
-  R new/path.txt  │  J / K            next / previous hunk   │
+▌  M src/app.rs   ┌ margin — keys ───────────────────────────┐
+   A docs/NOTES.md│                                          │
+   M assets/logo.p│  j / k            move down / up         │
+   R new/path.txt │  J / K            next / previous hunk   │
                   │  ] / [            next / previous file   │
                   │  gg / G           top / bottom           │
                   │  Ctrl-d / Ctrl-u  half page down / up    │ar("PROFILE");
@@ -15,14 +15,14 @@ expression: "render(&mut state, 80, 24)"
                   │  f                jump to file (fuzzy)   │
                   │  s / u            stage / unstage hunk   │
                   │  x                discard hunk (typed con│
+                  │  m                mark file viewed (folds│
                   │  r                reload the diff        │
                   │  v                toggle unified / side-b│
                   │  w                toggle line wrap       │
                   │  za / zA          collapse file / all fil│
                   │  b                toggle sidebar         │
                   │  ?                toggle this help       │
-                  │  q                quit                   │
-                  │                                          │hown
-                  └──────────────────────────────────────────┘0
-                                 └ renamed without content changes
+                  │  q                quit                   │hown
+                  │                                          │0
+                  └──────────────────────────────────────────┘nges
  src/app.rs  1/23

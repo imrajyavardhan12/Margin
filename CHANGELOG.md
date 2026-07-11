@@ -5,6 +5,15 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+### Added
+
+- Mark viewed (issue #20): `m` checks off the cursor's file — sidebar
+  checkmark, body folded (`za` reopens without unmarking). Marks persist
+  per review under the data dir, keyed by a content digest: quitting and
+  relaunching the same diff keeps your place, a rebase keeps untouched
+  files marked, and any file that changed un-views itself. Patch and
+  pager reviews keep marks session-only; nothing is written for them.
+
 ## [0.2.0] - 2026-07-11
 
 Structured output for scripts and agents, plus hardening from the

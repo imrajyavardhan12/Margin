@@ -29,9 +29,9 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
             FileStatus::Copied => "C",
         };
         let counts = format!(" +{} -{}", file.additions(), file.deletions());
-        // Reserve one column for the staged dot so files stay aligned and
-        // the indicator lights up in place as hunks are staged/unstaged.
-        let path_room = width.saturating_sub(4 + counts.len());
+        // Reserved columns for the staged dot and the viewed checkmark:
+        // files stay aligned while the indicators light up in place.
+        let path_room = width.saturating_sub(5 + counts.len());
         let path = truncate_left(&file.display_path(), path_room);
         let pad = path_room.saturating_sub(path.chars().count());
         let base = if selected {
@@ -40,6 +40,7 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
             state.theme.context
         };
         let staged = state.staged.as_ref().is_some_and(|s| s.is_staged(file));
+        let viewed = state.is_viewed(idx);
         lines.push(TLine::from(vec![
             Span::styled(marker, base),
             Span::styled(
@@ -49,6 +50,10 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
                 } else {
                     base
                 },
+            ),
+            Span::styled(
+                if viewed { "\u{2713}" } else { " " },
+                if viewed { state.theme.meta } else { base },
             ),
             Span::styled(format!("{glyph} {path}{}{counts}", " ".repeat(pad)), base),
         ]));
