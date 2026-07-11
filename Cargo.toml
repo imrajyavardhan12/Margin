@@ -60,7 +60,7 @@ regex = "1" # search (issue 7)
 # Test/dev (ADR 0010)
 insta = "1"
 tempfile = "3"
-criterion = "0.5"
+criterion = "0.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
