@@ -5,6 +5,11 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-11
+
+Structured output for scripts and agents, plus hardening from the
+post-M2 review sweep.
+
 ### Fixed
 
 - Watch mode no longer reloads while the fuzzy picker is open (the world
