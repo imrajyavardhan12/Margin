@@ -679,6 +679,82 @@ fn collapse_globs_fold_matching_files() {
     assert!(frame.contains("NOTES.md"), "its header stays: {frame}");
 }
 
+/// `m` marks the cursor's file viewed: checkmark in the sidebar, body
+/// folded, marks persisted via Command::SaveViewed; `m` again undoes it.
+#[test]
+fn m_toggles_viewed_folds_and_persists() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+
+    let command = update(&mut state, Msg::ToggleViewed).expect("toggle emits a save");
+    let Command::SaveViewed { entries } = command else {
+        panic!("expected SaveViewed");
+    };
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].0, "src/app.rs");
+    assert!(state.is_viewed(0));
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains('\u{2713}'), "checkmark shows: {frame}");
+    assert_eq!(
+        state.rows.iter().filter(|r| r.file() == 0).count(),
+        1,
+        "viewed file folds to its header"
+    );
+
+    // za reopens without un-viewing.
+    update(&mut state, Msg::ZKey);
+    update(&mut state, Msg::ToggleFold);
+    assert!(state.is_viewed(0), "expanding keeps the mark");
+    assert!(state.rows.iter().filter(|r| r.file() == 0).count() > 1);
+
+    // m again: unmark, and the save reflects it.
+    let command = update(&mut state, Msg::ToggleViewed).expect("untoggle saves too");
+    let Command::SaveViewed { entries } = command else {
+        panic!("expected SaveViewed");
+    };
+    assert!(entries.is_empty());
+    assert!(!state.is_viewed(0));
+}
+
+/// Stored marks only seed when the content digest still matches; a
+/// changed file arrives unmarked (the rebase-keeps-your-place rule).
+#[test]
+fn set_viewed_validates_digests_and_reload_invalidates() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    let digest = margin_core::file_digest(&state.changeset.files[0]);
+
+    state.set_viewed(vec![
+        (b"src/app.rs".to_vec(), digest),   // matches → seeds
+        (b"docs/NOTES.md".to_vec(), 12345), // stale digest → ignored
+    ]);
+    assert!(state.is_viewed(0));
+    assert!(!state.is_viewed(1));
+    assert_eq!(
+        state.rows.iter().filter(|r| r.file() == 0).count(),
+        1,
+        "seeded marks start folded"
+    );
+
+    // Reload where src/app.rs changed: its mark and fold drop.
+    let changed = SAMPLE.replace("// reviewed", "// re-reviewed");
+    update(
+        &mut state,
+        Msg::CommandFinished(CommandResult::Reloaded {
+            changeset: parse_unified(changed.as_bytes()).changeset,
+            staged: None,
+        }),
+    );
+    assert!(
+        !state.is_viewed(0),
+        "changed content must invalidate the mark"
+    );
+    assert!(
+        state.rows.iter().filter(|r| r.file() == 0).count() > 1,
+        "and the file reopens to show the new changes"
+    );
+}
+
 /// A reload while the picker is open must refilter it: `filtered` holds
 /// file *indices*, and stale indices confirm-jump to whatever file now
 /// occupies the old position (post-M2 review finding).

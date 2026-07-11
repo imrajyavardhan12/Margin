@@ -3,7 +3,7 @@ source: crates/margin-tui/tests/ui_snapshots.rs
 expression: "render(&mut state, 80, 24)"
 ---
  FILES (1)                ▌M src/long.rs  +2 -1
-▌ M src/long.rs      +2 -1 @@ -1,2 +1,3 @@ fn long()
+▌  M src/long.rs     +2 -1 @@ -1,2 +1,3 @@ fn long()
                               1  short context line  │   1  short context line
                               2 -let removed = compos│   2 +let added = compose(
                                  e("a deliberately lo│      "a deliberately long

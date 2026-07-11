@@ -204,6 +204,10 @@ pub enum Command {
     DiscardHunk { backup: Vec<u8>, patch: Vec<u8> },
     /// Re-read the changeset from the active source (`r`).
     Reload,
+    /// Persist the viewed marks (issue #20): lossy path → content digest.
+    /// Sources without a stable identity (pager/patch) ignore this — the
+    /// marks stay session-only.
+    SaveViewed { entries: Vec<(String, u64)> },
 }
 
 /// Outcome of a command, fed back into [`update`] as
@@ -236,6 +240,8 @@ pub enum CommandResult {
     Stale(HunkAction),
     /// The active source cannot do this (patch file, stdin, two-files).
     Unsupported(&'static str),
+    /// The command completed with nothing to report (persistence).
+    Done,
     Failed(String),
 }
 
@@ -263,6 +269,8 @@ pub enum Msg {
     ConfirmCancel,
     /// `r`: re-read the changeset from the source.
     Reload,
+    /// `m`: toggle the cursor's file viewed (marks + folds it).
+    ToggleViewed,
     /// First key of the `za`/`zA` fold chord.
     ZKey,
     /// `za`: toggle the cursor's file collapsed.
@@ -351,6 +359,11 @@ pub struct AppState {
     /// Fold (collapse) state per file, keyed by canonical byte path so it
     /// survives reloads (issue #21). Every current file has an entry.
     fold: std::collections::HashMap<Vec<u8>, bool>,
+    /// Viewed marks (issue #20): path → content digest at mark time. A
+    /// mark only counts while the digest still matches — a changed file
+    /// un-views itself. Loaded by the binary from the per-DiffId store;
+    /// every toggle emits `Command::SaveViewed`.
+    viewed: std::collections::HashMap<Vec<u8>, u64>,
     /// User/repo `collapse` globs; combined with the built-in heuristics
     /// they decide the default fold for files not seen before.
     collapse_globs: Vec<String>,
@@ -382,6 +395,7 @@ impl AppState {
             confirm: None,
             watching: false,
             fold: std::collections::HashMap::new(),
+            viewed: std::collections::HashMap::new(),
             collapse_globs: Vec::new(),
             pending_z: false,
         };
@@ -438,6 +452,54 @@ impl AppState {
         (0..self.changeset.files.len())
             .map(|i| self.is_collapsed(i))
             .collect()
+    }
+
+    /// Seed viewed marks from the persisted store (binary startup): only
+    /// entries whose digest still matches the current content count, and
+    /// those files start folded — collapse what you've already reviewed.
+    pub fn set_viewed(&mut self, entries: impl IntoIterator<Item = (Vec<u8>, u64)>) {
+        let stored: std::collections::HashMap<Vec<u8>, u64> = entries.into_iter().collect();
+        let valid: Vec<(Vec<u8>, u64)> = self
+            .changeset
+            .files
+            .iter()
+            .filter_map(|file| {
+                let key = path_key(file)?;
+                let digest = margin_core::file_digest(file);
+                (stored.get(key).copied() == Some(digest)).then(|| (key.to_vec(), digest))
+            })
+            .collect();
+        self.viewed.clear();
+        for (key, digest) in valid {
+            self.fold.insert(key.clone(), true);
+            self.viewed.insert(key, digest);
+        }
+        let file = self.current_file();
+        self.rebuild_rows_after_fold(file);
+    }
+
+    /// Whether this file is marked viewed. O(1): entries are validated
+    /// against content digests at load/toggle/reload time, never here —
+    /// the sidebar calls this per row per frame.
+    pub fn is_viewed(&self, file: usize) -> bool {
+        self.changeset
+            .files
+            .get(file)
+            .and_then(path_key)
+            .is_some_and(|key| self.viewed.contains_key(key))
+    }
+
+    /// Snapshot the marks for the persistence command (lossy paths: the
+    /// store is advisory, digests do the real matching). Sorted, so the
+    /// store file is deterministic.
+    fn save_viewed_command(&self) -> Command {
+        let mut entries: Vec<(String, u64)> = self
+            .viewed
+            .iter()
+            .map(|(path, digest)| (String::from_utf8_lossy(path).into_owned(), *digest))
+            .collect();
+        entries.sort();
+        Command::SaveViewed { entries }
     }
 
     /// Rebuild rows after fold changes, keeping the cursor on `file`'s
@@ -803,6 +865,7 @@ impl AppState {
                     Some("hunk didn't apply — the file changed since load (r reloads)".into());
             }
             CommandResult::Unsupported(why) => self.status_message = Some(why.into()),
+            CommandResult::Done => {}
             CommandResult::Failed(err) => self.status_message = Some(format!("failed: {err}")),
         }
     }
@@ -814,6 +877,26 @@ impl AppState {
         let anchor = self.rows.get(self.cursor).copied();
         self.changeset = changeset;
         self.staged = staged;
+        // Viewed marks only survive byte-identical content: one digest per
+        // current file, then drop every mark that no longer matches. An
+        // invalidated file's fold entry goes too, so it reopens (or falls
+        // back to the auto-collapse default) instead of hiding new changes.
+        let current: std::collections::HashMap<Vec<u8>, u64> = self
+            .changeset
+            .files
+            .iter()
+            .filter_map(|f| path_key(f).map(|k| (k.to_vec(), margin_core::file_digest(f))))
+            .collect();
+        let stale: Vec<Vec<u8>> = self
+            .viewed
+            .iter()
+            .filter(|(path, digest)| current.get(*path) != Some(digest))
+            .map(|(path, _)| path.clone())
+            .collect();
+        for path in stale {
+            self.viewed.remove(&path);
+            self.fold.remove(&path);
+        }
         // Fold state survives the reload by path: a file the user expanded
         // stays expanded; files appearing for the first time get defaults.
         let fold = self
@@ -948,6 +1031,28 @@ pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
         // Always issued, even on an empty changeset — a reload may be
         // exactly what brings changes into view.
         Msg::Reload => command = Some(Command::Reload),
+        Msg::ToggleViewed => {
+            if let Some(idx) = state.current_file() {
+                let keyed = state
+                    .changeset
+                    .files
+                    .get(idx)
+                    .and_then(|file| path_key(file).map(|k| (k.to_vec(), file)));
+                if let Some((key, file)) = keyed {
+                    if state.viewed.remove(&key).is_some() {
+                        // Un-viewing reopens the file.
+                        state.fold.insert(key, false);
+                    } else {
+                        state
+                            .viewed
+                            .insert(key.clone(), margin_core::file_digest(file));
+                        state.fold.insert(key, true);
+                    }
+                    state.rebuild_rows_after_fold(Some(idx));
+                    command = Some(state.save_viewed_command());
+                }
+            }
+        }
         Msg::ZKey => state.pending_z = true,
         Msg::FoldCancel => state.pending_z = false,
         Msg::ToggleFold => {

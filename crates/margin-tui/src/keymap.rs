@@ -54,6 +54,7 @@ fn normal(key: KeyEvent, ctrl: bool) -> Option<Msg> {
         KeyCode::Char('u') => Some(Msg::UnstageHunk),
         KeyCode::Char('x') => Some(Msg::DiscardHunk),
         KeyCode::Char('r') => Some(Msg::Reload),
+        KeyCode::Char('m') => Some(Msg::ToggleViewed),
         KeyCode::Char('z') => Some(Msg::ZKey),
         KeyCode::Char('v') => Some(Msg::ToggleLayout),
         KeyCode::Char('w') => Some(Msg::ToggleWrap),
@@ -144,6 +145,10 @@ mod tests {
         assert_eq!(
             normal(KeyCode::Char('z'), KeyModifiers::NONE),
             Some(Msg::ZKey)
+        );
+        assert_eq!(
+            normal(KeyCode::Char('m'), KeyModifiers::NONE),
+            Some(Msg::ToggleViewed)
         );
         // The fold chord's second key.
         let fold = |code, mods| msg_for_key(key(code, mods), InputMode::Fold);
