@@ -178,9 +178,7 @@ fn main() -> ExitCode {
             run_source(
                 &GitShow::new(cwd, rev.unwrap_or_else(|| "HEAD".into())),
                 &session,
-                None,
-                false,
-                false,
+                ReviewCtx::STATIC,
             )
         }
         Command::Patch { input, .. } => run_patch(input.as_deref().unwrap_or("-"), &session),
@@ -228,9 +226,11 @@ fn run_diff(args: DiffArgs, session: &Session) -> ExitCode {
         return run_source(
             &GitStaged::new(cwd.clone()),
             session,
-            Some(cwd),
-            false,
-            args.watch,
+            ReviewCtx {
+                staging_repo: Some(cwd),
+                worktree: false,
+                watch: args.watch,
+            },
         );
     }
 
@@ -238,27 +238,37 @@ fn run_diff(args: DiffArgs, session: &Session) -> ExitCode {
         [] => {
             let mut source = GitWorktree::new(cwd.clone());
             source.include_untracked = session.config.include_untracked;
-            run_source(&source, session, Some(cwd), true, args.watch)
+            run_source(
+                &source,
+                session,
+                ReviewCtx {
+                    staging_repo: Some(cwd),
+                    worktree: true,
+                    watch: args.watch,
+                },
+            )
         }
         [single] => {
             if let Some((from, to)) = split_range(single) {
                 if args.watch {
                     return watch_needs_worktree();
                 }
-                run_source(
-                    &GitRevRange::new(cwd, from, to),
-                    session,
-                    None,
-                    false,
-                    false,
-                )
+                run_source(&GitRevRange::new(cwd, from, to), session, ReviewCtx::STATIC)
             } else {
                 // `margin diff <rev>`: working tree vs that revision —
                 // git's semantics.
                 let mut source = GitWorktree::new(cwd.clone());
                 source.include_untracked = session.config.include_untracked;
                 source.base = Some(single.clone());
-                run_source(&source, session, Some(cwd), true, args.watch)
+                run_source(
+                    &source,
+                    session,
+                    ReviewCtx {
+                        staging_repo: Some(cwd),
+                        worktree: true,
+                        watch: args.watch,
+                    },
+                )
             }
         }
         [a, b] => {
@@ -266,14 +276,12 @@ fn run_diff(args: DiffArgs, session: &Session) -> ExitCode {
                 return watch_needs_worktree();
             }
             if Path::new(a).is_file() && Path::new(b).is_file() {
-                run_source(&TwoFiles::new(a, b), session, None, false, false)
+                run_source(&TwoFiles::new(a, b), session, ReviewCtx::STATIC)
             } else {
                 run_source(
                     &GitRevRange::new(cwd, a.clone(), b.clone()),
                     session,
-                    None,
-                    false,
-                    false,
+                    ReviewCtx::STATIC,
                 )
             }
         }
@@ -458,13 +466,30 @@ impl margin_tui::CommandExecutor for VcsExecutor<'_> {
     }
 }
 
-fn run_source(
-    source: &dyn DiffSource,
-    session: &Session,
+/// How a review relates to the repository: where index writes go (staging
+/// and discard need a repo), whether it is a worktree view (staged dots and
+/// discard are only meaningful there), and whether to watch for changes.
+struct ReviewCtx {
     staging_repo: Option<PathBuf>,
     worktree: bool,
     watch: bool,
-) -> ExitCode {
+}
+
+impl ReviewCtx {
+    /// Ranges, file pairs, `show`: nothing live, nothing writable.
+    const STATIC: ReviewCtx = ReviewCtx {
+        staging_repo: None,
+        worktree: false,
+        watch: false,
+    };
+}
+
+fn run_source(source: &dyn DiffSource, session: &Session, ctx: ReviewCtx) -> ExitCode {
+    let ReviewCtx {
+        staging_repo,
+        worktree,
+        watch,
+    } = ctx;
     match source.load() {
         Ok(changeset) => {
             // Watch mode: OS events feed the debounce handle; the event
