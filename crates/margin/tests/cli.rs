@@ -305,6 +305,84 @@ fn undo_restores_the_seeded_trash_entry() {
     );
 }
 
+/// The acceptance criterion for issue #22: `--json` round-trips the
+/// file/hunk/line structure including renames and binary flags, parseable
+/// by any JSON consumer (jq stands in for them all; serde_json here).
+#[test]
+fn json_round_trips_renames_and_binary_flags() {
+    let patch = b"diff --git a/old/name.txt b/new/name.txt\n\
+        similarity index 90%\n\
+        rename from old/name.txt\n\
+        rename to new/name.txt\n\
+        --- a/old/name.txt\n+++ b/new/name.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n\
+        diff --git a/logo.png b/logo.png\n\
+        index 3333333..4444444 100644\n\
+        Binary files a/logo.png and b/logo.png differ\n";
+    let out = run_with_stdin(&["patch", "--json", "-"], patch);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    assert_eq!(doc["schema"], 1);
+    assert_eq!(doc["files"][0]["status"], "renamed");
+    assert_eq!(doc["files"][0]["old_path"], "old/name.txt");
+    assert_eq!(doc["files"][0]["new_path"], "new/name.txt");
+    assert_eq!(doc["files"][0]["similarity"], 90);
+    assert_eq!(doc["files"][0]["hunks"][0]["lines"][0]["kind"], "deletion");
+    assert_eq!(doc["files"][0]["hunks"][0]["lines"][1]["content"], "b");
+    assert_eq!(doc["files"][1]["binary"], true);
+    assert_eq!(doc["files"][1]["hunks"].as_array().map(Vec::len), Some(0));
+}
+
+/// `margin diff --json <a> <b>` works for the two-file source too, and
+/// the document wins over the piped summary.
+#[test]
+fn json_flag_on_two_file_diff() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = dir.path().join("old.txt");
+    let new = dir.path().join("new.txt");
+    std::fs::write(&old, "one\n").unwrap();
+    std::fs::write(&new, "two\n").unwrap();
+    let out = margin()
+        .args([
+            "diff",
+            "--json",
+            old.to_str().unwrap(),
+            new.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    assert_eq!(doc["additions"], 1);
+    assert_eq!(doc["deletions"], 1);
+}
+
+/// Contract edges: --json + --watch refuse; pager stays byte-identical
+/// passthrough even with a stray root --json.
+#[test]
+fn json_refuses_watch_and_never_touches_pager() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = margin()
+        .current_dir(dir.path())
+        .args(["diff", "--json", "-w"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--json"));
+
+    let hostile: &[u8] = b"\x1b[1mnot json\x1b[m\n+\xff\xfe";
+    let out = run_with_stdin(&["--json", "pager"], hostile);
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(
+        out.stdout, hostile,
+        "pager passthrough is immune to --json (ADR-0007)"
+    );
+}
+
 #[test]
 fn watch_refuses_static_views() {
     // Ranges and file pairs have nothing live to watch: exit 2 before

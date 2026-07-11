@@ -10,9 +10,10 @@ repository.workspace = true
 [dependencies]
 # Kept I/O-free by design (ADR 0003/0004). Allowed deps: data-only crates.
 similar.workspace = true
-# serde.workspace = true     # enabled by the --json milestone
+serde.workspace = true # the --json schema (issue #22)
 
 [dev-dependencies]
+serde_json.workspace = true
 criterion.workspace = true
 
 [[bench]]
