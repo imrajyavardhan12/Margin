@@ -36,6 +36,8 @@ crates/margin-core   PURE: no I/O, no TUI deps, panic-free on untrusted input
   patch.rs           tolerant unified-diff parser (warnings, never errors/panics)
   intraline.rs       paired_changes + intraline_ranges (word-level emphasis)
   ansi.rs            strip_ansi (git colorizes pager output)
+  json.rs            --json schema (versioned public surface; docs/json-output.md)
+  collapse.rs        is_generated heuristics + glob_match (za auto-fold)
 crates/margin-vcs    the ONLY crate doing I/O; git2 quarantined here
   git.rs             GitWorktree/GitStaged/GitShow/GitRevRange + conversion
   files.rs           TwoFiles (git2 buffer diffing, no repo)

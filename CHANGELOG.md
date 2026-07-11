@@ -5,6 +5,16 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+### Added
+
+- JSON output (issue #22): `--json` on `diff`, `show`, and `patch` emits
+  the parsed changeset as a versioned document (`"schema": 1`) — files,
+  hunks, and lines with statuses, renames, binary flags, modes, and
+  counts. Strings are lossy UTF-8 with honesty flags on anything that
+  had invalid bytes. Schema documented in `docs/json-output.md`; within
+  schema 1 changes are additive only. Pager passthrough is untouched;
+  `--watch` and `--json` refuse to combine.
+
 ## [0.1.0] - 2026-07-12
 
 The first stable release. Everything from the release candidate, plus the

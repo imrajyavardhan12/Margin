@@ -48,6 +48,10 @@ struct Cli {
     #[arg(short = 'w', long)]
     watch: bool,
 
+    /// Emit the changeset as JSON (schema 1) instead of opening the TUI
+    #[arg(long)]
+    json: bool,
+
     /// Theme: ledger, foolscap, carbon, blueprint
     #[arg(long, global = true, value_name = "NAME")]
     theme: Option<String>,
@@ -69,11 +73,17 @@ enum Command {
     Show {
         /// Revision to show (defaults to HEAD)
         rev: Option<String>,
+        /// Emit the changeset as JSON (schema 1)
+        #[arg(long)]
+        json: bool,
     },
     /// Review a unified diff from stdin (`-`) or a patch file
     Patch {
         /// `-` for stdin (the default) or a path to a .patch/.diff file
         input: Option<String>,
+        /// Emit the changeset as JSON (schema 1)
+        #[arg(long)]
+        json: bool,
     },
     /// Git pager mode: interactive on a terminal, byte-identical
     /// passthrough when piped (safe as `git config core.pager`)
@@ -92,16 +102,22 @@ struct DiffArgs {
     #[arg(short = 'w', long)]
     watch: bool,
 
+    /// Emit the changeset as JSON (schema 1) instead of opening the TUI
+    #[arg(long)]
+    json: bool,
+
     /// A revision (`HEAD~2`), a range (`main..feature`), or two files
     #[arg(value_name = "REV|RANGE|FILE", num_args = 0..=2)]
     targets: Vec<String>,
 }
 
-/// Everything `show` needs besides the source: the merged config and the
-/// theme resolved against the terminal's color capability.
+/// Everything `show` needs besides the source: the merged config, the
+/// theme resolved against the terminal's color capability, and whether
+/// the output is the JSON document instead of a TUI/summary (issue #22).
 struct Session {
     config: Config,
     theme: Theme,
+    json: bool,
 }
 
 fn main() -> ExitCode {
@@ -132,17 +148,29 @@ fn main() -> ExitCode {
         );
         return ExitCode::from(2);
     };
-    let session = Session { config, theme };
-
     let command = cli.command.unwrap_or(Command::Diff(DiffArgs {
         staged: cli.staged,
         watch: cli.watch,
+        json: cli.json,
         targets: Vec::new(),
     }));
 
+    // Pager mode never emits JSON: its piped output is byte-identical by
+    // contract (ADR-0007), and interactively it is a review, not a query.
+    let json = match &command {
+        Command::Diff(args) => cli.json || args.json,
+        Command::Show { json, .. } | Command::Patch { json, .. } => cli.json || *json,
+        Command::Pager | Command::Undo => false,
+    };
+    let session = Session {
+        config,
+        theme,
+        json,
+    };
+
     match command {
         Command::Diff(args) => run_diff(args, &session),
-        Command::Show { rev } => {
+        Command::Show { rev, .. } => {
             let cwd = match working_dir() {
                 Ok(dir) => dir,
                 Err(code) => return code,
@@ -155,7 +183,7 @@ fn main() -> ExitCode {
                 false,
             )
         }
-        Command::Patch { input } => run_patch(input.as_deref().unwrap_or("-"), &session),
+        Command::Patch { input, .. } => run_patch(input.as_deref().unwrap_or("-"), &session),
         Command::Pager => run_patch("-", &session),
         Command::Undo => run_undo(),
     }
@@ -188,6 +216,10 @@ fn run_diff(args: DiffArgs, session: &Session) -> ExitCode {
     };
     if args.staged && !args.targets.is_empty() {
         eprintln!("margin: --staged cannot be combined with revisions or files");
+        return ExitCode::from(2);
+    }
+    if args.watch && session.json {
+        eprintln!("margin: --watch and --json cannot be combined");
         return ExitCode::from(2);
     }
     if args.staged {
@@ -290,8 +322,9 @@ fn run_patch(input: &str, session: &Session) -> ExitCode {
 
     // The passthrough guarantee (ADR-0007): piped output is byte-identical
     // to the input — `git -c core.pager='margin pager' log -p | grep` must
-    // behave exactly as without us.
-    if !std::io::stdout().is_terminal() {
+    // behave exactly as without us. `--json` opts out: the caller asked
+    // for the parsed document, piped or not (pager mode never sets it).
+    if !session.json && !std::io::stdout().is_terminal() {
         let mut stdout = std::io::stdout().lock();
         if stdout
             .write_all(&bytes)
@@ -542,6 +575,20 @@ fn show(
     watch: Option<&margin_tui::WatchHandle>,
     executor: &mut dyn margin_tui::CommandExecutor,
 ) -> ExitCode {
+    // JSON beats both the TUI and the piped summary: the caller asked
+    // for the document (issue #22, schema in docs/json-output.md).
+    if session.json {
+        match serde_json::to_string(&margin_core::json_changeset(&changeset)) {
+            Ok(doc) => {
+                println!("{doc}");
+                return ExitCode::SUCCESS;
+            }
+            Err(err) => {
+                eprintln!("margin: cannot serialize changeset: {err}");
+                return ExitCode::from(2);
+            }
+        }
+    }
     if !std::io::stdout().is_terminal() {
         print_summary(&changeset);
         return ExitCode::SUCCESS;

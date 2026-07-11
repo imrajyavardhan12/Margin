@@ -1143,6 +1143,7 @@ dependencies = [
  "margin-vcs",
  "notify",
  "serde",
+ "serde_json",
  "tempfile",
  "toml",
 ]
@@ -1152,6 +1153,8 @@ name = "margin-core"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "serde",
+ "serde_json",
  "similar 3.1.1",
 ]
 
