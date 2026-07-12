@@ -7,6 +7,8 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- The status bar shows `hunk x/y` for the hunk under the cursor
+  (issue #19) — reviewers think in hunks, not rows.
 - Mark viewed (issue #20): `m` checks off the cursor's file — sidebar
   checkmark, body folded (`za` reopens without unmarking). Marks persist
   per review under the data dir, keyed by a content digest: quitting and

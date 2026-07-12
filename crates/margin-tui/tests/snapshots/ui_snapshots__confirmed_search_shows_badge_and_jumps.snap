@@ -25,4 +25,4 @@ expression: frame
                                  └ binary file: contents not shown
                            R old/path.txt → new/path.txt  +0 -0
                                  └ renamed without content changes
- src/app.rs  7/23  /setup 2/2
+ src/app.rs  7/23  hunk 1/2  /setup 2/2

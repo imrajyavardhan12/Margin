@@ -735,6 +735,14 @@ impl AppState {
         }
     }
 
+    /// 1-based `(hunk, of)` for the cursor within its file — reviewers
+    /// think in hunks, so the status bar shows this (issue #19).
+    pub fn hunk_position(&self) -> Option<(usize, usize)> {
+        let (file, hunk) = self.hunk_under_cursor()?;
+        let total = self.changeset.files.get(file)?.hunks.len();
+        Some((hunk + 1, total))
+    }
+
     /// Build the index-write command for the hunk under the cursor, or
     /// explain in the status bar why there isn't one (ADR-0013: refusals
     /// are messages, not errors).
