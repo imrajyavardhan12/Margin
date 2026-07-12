@@ -679,6 +679,31 @@ fn collapse_globs_fold_matching_files() {
     assert!(frame.contains("NOTES.md"), "its header stays: {frame}");
 }
 
+/// The status bar shows `hunk x/y` for the cursor's hunk, in both
+/// layouts; file headers carry no badge (issue #19).
+#[test]
+fn status_bar_shows_hunk_position_in_both_layouts() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    assert!(
+        !render(&mut state, 80, 24).contains("hunk "),
+        "no badge on a file header"
+    );
+
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::NextHunk);
+    assert!(
+        render(&mut state, 80, 24).contains("hunk 2/2"),
+        "unified: second of src/app.rs's two hunks"
+    );
+
+    update(&mut state, Msg::ToggleLayout);
+    assert!(
+        render(&mut state, 80, 24).contains("hunk 2/2"),
+        "split rows carry the badge too"
+    );
+}
+
 /// `m` marks the cursor's file viewed: checkmark in the sidebar, body
 /// folded, marks persisted via Command::SaveViewed; `m` again undoes it.
 #[test]

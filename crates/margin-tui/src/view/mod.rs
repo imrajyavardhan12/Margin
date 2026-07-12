@@ -128,6 +128,10 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
                 .get(idx)
                 .map(|f| f.display_path().into_owned())
                 .unwrap_or_default();
+            let hunk = match state.hunk_position() {
+                Some((pos, total)) => format!("  hunk {pos}/{total}"),
+                None => String::new(),
+            };
             let layout = if state.split_active { "  [split]" } else { "" };
             let wrap = if state.wrap { "  [wrap]" } else { "" };
             let watch = if state.watching { "  [watch]" } else { "" };
@@ -137,7 +141,7 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
                 (None, _) => String::new(),
             };
             format!(
-                " {path}  {}/{}{layout}{wrap}{watch}{search}",
+                " {path}  {}/{}{hunk}{layout}{wrap}{watch}{search}",
                 state.cursor + 1,
                 state.rows.len()
             )
