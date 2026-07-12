@@ -26,7 +26,7 @@ use margin_tui::theme::{Theme, THEME_NAMES};
 use margin_tui::AppState;
 use margin_vcs::{
     apply_patch_to_index, apply_patch_to_worktree, undo_last_discard, write_trash, DiffSource,
-    GitRevRange, GitShow, GitStaged, GitWorktree, StageError, TwoFiles,
+    GhPr, GitRevRange, GitShow, GitStaged, GitWorktree, StageError, TwoFiles,
 };
 
 #[derive(Parser)]
@@ -82,6 +82,15 @@ enum Command {
     Patch {
         /// `-` for stdin (the default) or a path to a .patch/.diff file
         input: Option<String>,
+        /// Emit the changeset as JSON (schema 1)
+        #[arg(long)]
+        json: bool,
+    },
+    /// Review a GitHub pull request via the authenticated `gh` CLI
+    /// (ADR-0015): a number, branch, or URL — anything `gh` accepts
+    Pr {
+        /// PR number, branch name, or URL
+        selector: String,
         /// Emit the changeset as JSON (schema 1)
         #[arg(long)]
         json: bool,
@@ -160,7 +169,9 @@ fn main() -> ExitCode {
     // contract (ADR-0007), and interactively it is a review, not a query.
     let json = match &command {
         Command::Diff(args) => cli.json || args.json,
-        Command::Show { json, .. } | Command::Patch { json, .. } => cli.json || *json,
+        Command::Show { json, .. } | Command::Patch { json, .. } | Command::Pr { json, .. } => {
+            cli.json || *json
+        }
         Command::Pager | Command::Undo => false,
     };
     let session = Session {
@@ -183,6 +194,19 @@ fn main() -> ExitCode {
             )
         }
         Command::Patch { input, .. } => run_patch(input.as_deref().unwrap_or("-"), &session),
+        Command::Pr { selector, .. } => {
+            let cwd = match working_dir() {
+                Ok(dir) => dir,
+                Err(code) => return code,
+            };
+            match GhPr::resolve(cwd, selector) {
+                Ok(source) => run_source(&source, &session, ReviewCtx::STATIC),
+                Err(err) => {
+                    eprintln!("margin: {err}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Command::Pager => run_patch("-", &session),
         Command::Undo => run_undo(),
     }

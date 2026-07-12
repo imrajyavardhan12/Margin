@@ -400,6 +400,83 @@ fn watch_refuses_static_views() {
     );
 }
 
+/// A fake `gh` on PATH keeps the pr tests hermetic (ADR-0015: the real
+/// one would need auth and a network).
+#[cfg(unix)]
+fn fake_gh_dir(script: &str) -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("gh");
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    dir
+}
+
+#[cfg(unix)]
+#[test]
+fn pr_reviews_through_gh() {
+    let shim = fake_gh_dir(
+        "#!/bin/sh\n\
+         case \"$1 $2\" in\n\
+           'pr view') echo 'https://github.com/o/r/pull/7' ;;\n\
+           'pr diff') printf -- 'diff --git a/f.txt b/f.txt\\n--- a/f.txt\\n+++ b/f.txt\\n@@ -1,1 +1,1 @@\\n-a\\n+b\\n' ;;\n\
+           *) exit 1 ;;\n\
+         esac\n",
+    );
+    let path = format!(
+        "{}:{}",
+        shim.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let out = margin()
+        .env("PATH", path)
+        .args(["pr", "7", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    assert_eq!(doc["files"][0]["new_path"], "f.txt");
+    assert_eq!(doc["additions"], 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn pr_gives_actionable_errors() {
+    // No gh anywhere on PATH: name the missing tool.
+    let empty = tempfile::tempdir().unwrap();
+    let out = margin()
+        .env("PATH", empty.path())
+        .args(["pr", "1"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("GitHub CLI"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // gh present but failing (unauthenticated, bad PR): its stderr
+    // passes through verbatim.
+    let shim = fake_gh_dir("#!/bin/sh\necho 'gh: not logged in' >&2\nexit 1\n");
+    let out = margin()
+        .env("PATH", shim.path())
+        .args(["pr", "1"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("not logged in"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 #[test]
 fn undo_outside_a_repo_exits_2() {
     let dir = tempfile::tempdir().unwrap();

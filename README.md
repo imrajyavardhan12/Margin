@@ -65,6 +65,7 @@ margin show HEAD~1            # review a commit
 margin diff main..feature     # review a range
 margin diff old.rs new.rs     # compare two files
 git diff | margin             # review any unified diff from stdin
+margin pr 123                 # review a GitHub PR (via the gh CLI)
 margin diff --json | jq       # structured changeset for scripts and agents
 ```
 

@@ -41,6 +41,7 @@ crates/margin-core   PURE: no I/O, no TUI deps, panic-free on untrusted input
 crates/margin-vcs    the ONLY crate doing I/O; git2 quarantined here
   git.rs             GitWorktree/GitStaged/GitShow/GitRevRange + conversion
   files.rs           TwoFiles (git2 buffer diffing, no repo)
+  gh.rs              GhPr: PRs via the user's gh CLI subprocess (ADR-0015)
   staging.rs         apply_patch_to_index (ADR-0013: index-only, dry-run first)
   discard.rs         worktree discard + trash + undo (ADR-0014: trash before destroy)
 crates/margin-tui    Elm: AppState + Msg + update() + pure view(); NEVER imports margin-vcs

@@ -36,3 +36,4 @@ questions or, worse, silently unsettle them.
 | [0012](0012-license.md) | License: MIT OR Apache-2.0 | Accepted |
 | [0013](0013-hunk-staging-safety.md) | Hunk staging: index-only, dry-run first, exact bytes | Accepted |
 | [0014](0014-discard-safety.md) | Discard: trash before destroy, worktree-only, typed confirm | Accepted |
+| [0015](0015-forge-via-gh.md) | Forge access through the user's `gh` CLI, quarantined in margin-vcs | Accepted |
