@@ -7,6 +7,11 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- `margin pr <number|branch|url>` reviews a GitHub pull request through
+  the authenticated `gh` CLI (issue #24, ADR-0015) — Margin never holds
+  a token. Viewed marks persist per PR and survive force-pushes for
+  untouched files (content digests do the invalidation). `--json` works
+  here too. Clear errors when `gh` is missing or not logged in.
 - The status bar shows `hunk x/y` for the hunk under the cursor
   (issue #19) — reviewers think in hunks, not rows.
 - Mark viewed (issue #20): `m` checks off the cursor's file — sidebar

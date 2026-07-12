@@ -20,11 +20,13 @@
 
 mod discard;
 mod files;
+mod gh;
 mod git;
 mod staging;
 
 pub use discard::{apply_patch_to_worktree, undo_last_discard, write_trash, UndoError};
 pub use files::TwoFiles;
+pub use gh::GhPr;
 pub use git::{workdir_root, GitRevRange, GitShow, GitStaged, GitWorktree};
 pub use staging::{apply_patch_to_index, StageError};
 
