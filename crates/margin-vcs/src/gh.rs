@@ -37,9 +37,22 @@ impl GhPr {
     ) -> Result<Self, SourceError> {
         let cwd = cwd.into();
         let selector = selector.into();
+        // Argument-injection guard: the selector is user input handed to
+        // an authenticated CLI's argv. A leading `-` would be parsed by
+        // gh as a flag (`-R other/repo`, `--web`), not a selector — and
+        // no legitimate selector (number, #123, branch, URL) starts with
+        // one. Both invocations also place the selector after `--`
+        // (end-of-flags), so even a validation gap cannot smuggle flags.
+        if selector.starts_with('-') || selector.is_empty() {
+            return Err(SourceError::Git(format!(
+                "'{selector}' is not a pull request selector (expected a number, branch, or URL)"
+            )));
+        }
         let output = run_gh(
             &cwd,
-            &["pr", "view", &selector, "--json", "url", "--jq", ".url"],
+            &[
+                "pr", "view", "--json", "url", "--jq", ".url", "--", &selector,
+            ],
         )?;
         let url = String::from_utf8_lossy(&output).trim().to_string();
         if url.is_empty() {
@@ -58,7 +71,7 @@ impl GhPr {
 
 impl DiffSource for GhPr {
     fn load(&self) -> Result<Changeset, SourceError> {
-        let bytes = run_gh(&self.cwd, &["pr", "diff", &self.selector])?;
+        let bytes = run_gh(&self.cwd, &["pr", "diff", "--", &self.selector])?;
         // gh emits clean git-generated diffs; the tolerant parser's
         // warnings would only fire on transport corruption, where the
         // partial parse is still the most useful thing to show.
@@ -99,4 +112,25 @@ fn run_gh(cwd: &std::path::Path, args: &[&str]) -> Result<Vec<u8>, SourceError> 
         )));
     }
     Ok(output.stdout)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The injection guard fires before any subprocess: flag-shaped
+    /// selectors must never reach the authenticated gh's argv.
+    #[test]
+    fn flag_shaped_selectors_are_rejected_without_running_gh() {
+        for hostile in ["-R", "--web", "--repo evil/repo", "-", ""] {
+            let err = match GhPr::resolve("/nonexistent-dir", hostile) {
+                Err(err) => err.to_string(),
+                Ok(_) => panic!("{hostile:?} must be rejected"),
+            };
+            assert!(
+                err.contains("not a pull request selector"),
+                "{hostile:?}: {err}"
+            );
+        }
+    }
 }
