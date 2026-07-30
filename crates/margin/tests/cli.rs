@@ -211,6 +211,45 @@ fn no_untracked_flag_excludes_untracked_files() {
     assert!(dump.contains("include_untracked = false"), "{dump}");
 }
 
+/// The default theme is `auto` (issue #27). A piped run is exactly the
+/// "terminal won't answer" case: detection must fall back to a real
+/// theme without stalling, and `auto` must be a valid `--theme` value.
+#[test]
+fn auto_theme_is_the_default_and_piped_runs_fall_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let no_config = dir.path().join("none.toml");
+
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &no_config)
+        .arg("--dump-config")
+        .output()
+        .unwrap();
+    let dump = String::from_utf8_lossy(&out.stdout);
+    assert!(dump.contains("theme = \"auto\""), "{dump}");
+
+    let patch = b"--- a\n+++ b\n@@ -1,1 +1,1 @@\n-x\n+y\n";
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &no_config)
+        .args(["--theme", "auto", "patch", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map(|mut child| {
+            child.stdin.take().unwrap().write_all(patch).unwrap();
+            child.wait_with_output().unwrap()
+        })
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 #[test]
 fn config_typos_error_with_suggestions() {
     let dir = tempfile::tempdir().unwrap();

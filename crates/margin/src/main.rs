@@ -53,7 +53,8 @@ struct Cli {
     #[arg(long)]
     json: bool,
 
-    /// Theme: ledger, foolscap, carbon, blueprint
+    /// Theme: auto (match the terminal background), ledger, foolscap,
+    /// carbon, blueprint
     #[arg(long, global = true, value_name = "NAME")]
     theme: Option<String>,
 
@@ -155,10 +156,17 @@ fn main() -> ExitCode {
         print!("{}", config.dump());
         return ExitCode::SUCCESS;
     }
-    let Some(theme) = Theme::resolve(&config.theme, config::detect_color_mode()) else {
+    // "auto" resolves to a real theme name here, before Theme::resolve —
+    // the TUI never knows detection happened (issue #27). Config wins:
+    // any explicit theme skips the terminal query entirely.
+    let theme_name = if config.theme == "auto" {
+        config::auto_theme_name().to_string()
+    } else {
+        config.theme.clone()
+    };
+    let Some(theme) = Theme::resolve(&theme_name, config::detect_color_mode()) else {
         eprintln!(
-            "margin: unknown theme '{}' (built-in themes: {})",
-            config.theme,
+            "margin: unknown theme '{theme_name}' (auto, or built-in themes: {})",
             THEME_NAMES.join(", ")
         );
         return ExitCode::from(2);

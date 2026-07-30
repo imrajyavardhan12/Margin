@@ -24,7 +24,8 @@ never silently ignored.
 
 ```toml
 # User config: full surface.
-theme = "ledger"           # ledger | foolscap | carbon | blueprint
+theme = "auto"             # auto | ledger | foolscap | carbon | blueprint
+                           # auto matches the terminal background (themes.md)
 layout = "auto"            # auto | unified | split
 include_untracked = true   # show untracked files in `margin` / `margin diff`
                            # (`--no-untracked` overrides per invocation)
