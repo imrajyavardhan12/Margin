@@ -61,6 +61,10 @@ struct Cli {
     #[arg(long, global = true, value_enum)]
     layout: Option<LayoutChoice>,
 
+    /// Exclude untracked files from worktree reviews
+    #[arg(long, global = true)]
+    no_untracked: bool,
+
     /// Print the effective configuration (after merging files and flags)
     #[arg(long)]
     dump_config: bool,
@@ -139,6 +143,7 @@ fn main() -> ExitCode {
         cwd.as_deref(),
         cli.theme.as_deref(),
         cli.layout,
+        cli.no_untracked,
     ) {
         Ok(config) => config,
         Err(message) => {
