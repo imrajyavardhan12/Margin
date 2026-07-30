@@ -168,6 +168,49 @@ fn dump_config_reflects_files_and_flags() {
     assert!(dump.contains("layout = \"unified\""), "{dump}");
 }
 
+/// `--no-untracked` (issue #18): the flag form of `include_untracked`
+/// (ADR-0008: every config key has a flag). The JSON output proves the
+/// worktree source honors it; `--dump-config` proves the merge does.
+#[test]
+fn no_untracked_flag_excludes_untracked_files() {
+    let dir = undo_repo();
+    std::fs::write(dir.path().join("extra.txt"), "new\n").unwrap();
+    let no_config = dir.path().join("none.toml");
+
+    let with = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &no_config)
+        .args(["diff", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(with.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&with.stdout).contains("extra.txt"),
+        "untracked files show by default"
+    );
+
+    let without = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &no_config)
+        .args(["diff", "--no-untracked", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(without.status.code(), Some(0));
+    assert!(
+        !String::from_utf8_lossy(&without.stdout).contains("extra.txt"),
+        "--no-untracked hides them"
+    );
+
+    let dump = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &no_config)
+        .args(["--no-untracked", "--dump-config"])
+        .output()
+        .unwrap();
+    let dump = String::from_utf8_lossy(&dump.stdout);
+    assert!(dump.contains("include_untracked = false"), "{dump}");
+}
+
 #[test]
 fn config_typos_error_with_suggestions() {
     let dir = tempfile::tempdir().unwrap();

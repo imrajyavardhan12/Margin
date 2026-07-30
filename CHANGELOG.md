@@ -7,6 +7,10 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- `--no-untracked` excludes untracked files from worktree reviews
+  (issue #18) — the flag form of the `include_untracked` config key,
+  completing flag/config parity (ADR-0008). `--dump-config` reflects it.
+
 - `margin pr <number|branch|url>` reviews a GitHub pull request through
   the authenticated `gh` CLI (issue #24, ADR-0015) — Margin never holds
   a token. Viewed marks persist per PR and survive force-pushes for

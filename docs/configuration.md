@@ -13,7 +13,7 @@ Later sources win:
    on Windows). Set `$MARGIN_CONFIG` to point at an explicit file.
 3. **Repo config**: `.margin.toml` at the repository root (searched upward
    from the working directory, stopping at the `.git` boundary)
-4. CLI flags: `--theme`, `--layout`
+4. CLI flags: `--theme`, `--layout`, `--no-untracked`
 
 Inspect the merged result with `margin --dump-config`.
 
@@ -27,6 +27,7 @@ never silently ignored.
 theme = "ledger"           # ledger | foolscap | carbon | blueprint
 layout = "auto"            # auto | unified | split
 include_untracked = true   # show untracked files in `margin` / `margin diff`
+                           # (`--no-untracked` overrides per invocation)
 discard_trash = true       # back up discarded hunks to .git/margin/trash/
                            # before applying (ADR-0014); `margin undo` restores
 collapse = []              # globs to auto-collapse (za expands), on top of
