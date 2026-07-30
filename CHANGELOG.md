@@ -7,6 +7,12 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- The default theme is now `auto` (issue #27): Margin queries the
+  terminal's background color (OSC 11, 50 ms budget) and picks `ledger`
+  on dark, `foolscap` on light. Unanswering terminals (tmux/screen
+  without passthrough, CI, pipes) fall back to `ledger` — the previous
+  default — and an explicit theme anywhere skips the query.
+
 - `--no-untracked` excludes untracked files from worktree reviews
   (issue #18) — the flag form of the `include_untracked` config key,
   completing flag/config parity (ADR-0008). `--dump-config` reflects it.

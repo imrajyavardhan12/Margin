@@ -3,10 +3,17 @@
 Four built-ins, chosen with `theme = "<name>"` in
 [config](configuration.md) or `--theme <name>`.
 
+The default is `theme = "auto"`: Margin asks the terminal for its
+background color (an OSC 11 query with a 50 ms budget) and picks
+`ledger` on dark, `foolscap` on light. Terminals that don't answer —
+tmux or screen without passthrough, some ssh hops, CI — fall back to
+`ledger`. Setting any explicit theme, in config or with `--theme`,
+skips the query entirely.
+
 | Theme | For | Character |
 |---|---|---|
-| `ledger` *(default)* | dark terminals | calm green/red ink on subtle tints; base16-ocean syntax |
-| `foolscap` | light terminals | dark ink on paper-colored tints; InspiredGitHub syntax |
+| `ledger` *(auto: dark)* | dark terminals | calm green/red ink on subtle tints; base16-ocean syntax |
+| `foolscap` *(auto: light)* | light terminals | dark ink on paper-colored tints; InspiredGitHub syntax |
 | `carbon` | dark, high contrast | bright ink, deep tints, amber hunk headers; base16-eighties syntax |
 | `blueprint` | dark, blue-tinted | the drafting-table look; Solarized syntax |
 

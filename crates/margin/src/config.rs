@@ -76,7 +76,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            theme: "ledger".into(),
+            theme: "auto".into(),
             layout: LayoutChoice::Auto,
             include_untracked: true,
             discard_trash: true,
@@ -198,6 +198,25 @@ fn find_repo_config(start: &Path) -> Option<PathBuf> {
             return None; // repo root reached without a config
         }
         dir = dir.parent()?;
+    }
+}
+
+/// The `"auto"` theme (the default): match the terminal's background.
+/// One OSC 11 round-trip (terminal-colorsaurus) with a 50ms budget —
+/// startup must never hang on a terminal that won't answer (issue #27).
+/// Anything short of a confident "light" — timeout, tmux/screen without
+/// passthrough, unsupported terminal, piped stdout — is dark: `ledger`,
+/// the pre-auto default. An explicit theme never reaches this function.
+pub fn auto_theme_name() -> &'static str {
+    use std::io::IsTerminal;
+    if !std::io::stdout().is_terminal() {
+        return "ledger";
+    }
+    let mut options = terminal_colorsaurus::QueryOptions::default();
+    options.timeout = std::time::Duration::from_millis(50);
+    match terminal_colorsaurus::theme_mode(options) {
+        Ok(terminal_colorsaurus::ThemeMode::Light) => "foolscap",
+        _ => "ledger",
     }
 }
 
@@ -366,6 +385,6 @@ mod tests {
     fn dump_round_trips_through_the_parser() {
         let dump = Config::default().dump();
         let parsed: UserFile = toml::from_str(&dump).unwrap();
-        assert_eq!(parsed.theme.as_deref(), Some("ledger"));
+        assert_eq!(parsed.theme.as_deref(), Some("auto"));
     }
 }
