@@ -108,8 +108,10 @@ Dependency rule (compiler-enforced, do not work around):
 - **Pager passthrough is byte-identical by contract** (ADR-0007). The
   `strip_ansi` path is for *parsing only* — never let any transformation
   touch passthrough bytes. Tests compare against real `git log -p` output.
-- **clap is pinned to 4.5**: 4.6.1 is broken on crates.io (missing
-  clap_derive). Do not "update" it without checking the registry.
+- **clap 4.6.1 shipped broken on crates.io** (missing clap_derive), later
+  fixed; the lock now rides 4.6.x. The durable lesson: a registry release
+  can be broken, so a dependency bump is proven only by green CI on the
+  bump PR — never by the version number looking harmless.
 - **deny.toml ignores** (paste, bincode, yaml-rust RUSTSECs) are documented
   decisions, not oversights — read the comments before touching.
 - **Wrap geometry is a two-sided contract**: `AppState::row_height` must
