@@ -3,7 +3,16 @@
 All notable changes to Margin. Generated from Conventional Commits by git-cliff;
 release notes are hand-curated on top in GitHub Releases.
 
-## [Unreleased]
+## [0.3.0] - 2026-07-30
+
+Pull-request review, review persistence, and a terminal-aware default
+theme.
+
+### Security
+
+- `margin pr` rejects flag-shaped selectors before they ever reach the
+  authenticated `gh` CLI's argv (argument injection), and both `gh`
+  invocations pass the selector after `--` as defense in depth.
 
 ### Added
 

@@ -1125,7 +1125,7 @@ dependencies = [
 
 [[package]]
 name = "margin"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "git2",
@@ -1142,7 +1142,7 @@ dependencies = [
 
 [[package]]
 name = "margin-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "serde",
@@ -1152,7 +1152,7 @@ dependencies = [
 
 [[package]]
 name = "margin-tui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "crossterm",
@@ -1166,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "margin-vcs"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "git2",
  "margin-core",
