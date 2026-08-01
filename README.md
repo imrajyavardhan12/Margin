@@ -1,6 +1,8 @@
 # margin
 
 > Review changes in the margin.
+>
+> **[margin docs & site →](https://imrajyavardhan12.github.io/Margin/)**
 
 **Margin is a fast, keyboard-first terminal diff viewer** for reviewing Git
 changes, staged/unstaged work, patches — and the changesets your AI agents

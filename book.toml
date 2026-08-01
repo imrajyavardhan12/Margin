@@ -1,0 +1,30 @@
+# mdBook builds the docs half of margin.dev-style site from the *same*
+# docs/ tree the repository serves on GitHub — no copies, so a flag and
+# its documentation can never drift into separate pull requests.
+#
+# Build with site/build.sh (it stages CHANGELOG/CONTRIBUTING into docs/
+# first, since mdBook cannot reach outside its src dir).
+
+[book]
+title = "Margin"
+description = "A fast, keyboard-first terminal diff viewer for reviewing Git changes, patches, and AI-authored code."
+authors = ["Margin contributors"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "site/build/docs"
+create-missing = false
+
+[output.html]
+default-theme = "ayu"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/imrajyavardhan12/Margin"
+edit-url-template = "https://github.com/imrajyavardhan12/Margin/edit/main/{path}"
+additional-css = ["site/docs-theme.css"]
+additional-js = ["site/docs-home.js"]
+site-url = "/Margin/docs/"
+
+[output.html.fold]
+enable = true
+level = 1

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Margin — review changes in the margin</title>
+<meta name="description" content="A fast, keyboard-first terminal diff viewer for reviewing Git changes, patches, and the code your AI agents keep producing.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▌</text></svg>">
+<meta property="og:title" content="Margin — review changes in the margin">
+<meta property="og:description" content="A fast, keyboard-first terminal diff viewer. Stage, discard, annotate, and check off hunks without leaving the terminal.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://imrajyavardhan12.github.io/Margin/">
+<!-- A still, not the GIF: social cards and slow connections show frame 1,
+     and the demo opens on an empty prompt. This frame shows the product. -->
+<meta property="og:image" content="https://imrajyavardhan12.github.io/Margin/assets/social-card.png">
+<meta property="og:image:width" content="1180">
+<meta property="og:image:height" content="720">
+<meta name="twitter:image" content="https://imrajyavardhan12.github.io/Margin/assets/social-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<a class="skip" href="#install">Skip to install</a>
+
+<header class="top">
+  <span class="wordmark"><span class="bar">▌</span>margin</span>
+  <nav>
+    <a href="docs/">Docs</a>
+    <a href="docs/keybindings.html">Keys</a>
+    <a href="https://github.com/imrajyavardhan12/Margin/blob/main/CHANGELOG.md">Changelog</a>
+    <a class="gh" href="https://github.com/imrajyavardhan12/Margin">GitHub</a>
+  </nav>
+</header>
+
+<main>
+
+<section class="hero">
+  <h1>Review changes <em>in the margin</em>.</h1>
+  <p class="lede">
+    A fast, keyboard-first terminal diff viewer for Git changes, patches —
+    and the code your agents keep producing. One static binary. No runtime.
+  </p>
+
+  <div class="install-row" id="install">
+    <code id="install-cmd">brew install imrajyavardhan12/tap/margin</code>
+    <button type="button" id="copy" aria-label="Copy install command">copy</button>
+  </div>
+  <p class="alt-install">
+    or <a href="https://github.com/imrajyavardhan12/Margin/releases/latest">download a binary</a>
+    · <code>curl -fsSL https://github.com/imrajyavardhan12/Margin/releases/latest/download/margin-installer.sh | sh</code>
+  </p>
+</section>
+
+<section class="demo">
+  <figure>
+    <img src="assets/demo.gif" alt="Margin reviewing a Rust diff: navigating hunks, staging one, leaving a review note, marking the file viewed, then exporting the notes as Markdown." width="1180" height="720" loading="eager">
+    <figcaption>
+      Read the diff, stage the good part, leave a note on the rest, check the
+      file off — then hand the notes back as Markdown.
+    </figcaption>
+  </figure>
+</section>
+
+<section class="why">
+  <h2>Why Margin</h2>
+  <div class="cards">
+
+    <article>
+      <h3>Built for the agent loop</h3>
+      <p>
+        Mark a file viewed and it <em>stays</em> viewed across rebases and
+        force-pushes — marks are keyed to content, not line numbers, so only
+        files that actually changed come back for a second look.
+      </p>
+      <p>
+        Annotate a hunk with <kbd>c</kbd>, then <code>margin --notes</code>
+        prints every remark as Markdown with <code>path:line</code> anchors.
+        Paste it into a pull request, or hand it straight back to the agent
+        that wrote the code.
+      </p>
+    </article>
+
+    <article>
+      <h3>Acts on the diff</h3>
+      <p>
+        Stage and unstage hunk by hunk with <kbd>s</kbd> / <kbd>u</kbd>, or
+        discard one with <kbd>x</kbd>. Accepting and rejecting an agent's
+        edits never means switching tools.
+      </p>
+      <p>
+        Staging touches the index only. Discard — the one destructive key —
+        writes a backup patch to <code>.git/margin/trash/</code>, makes you
+        type <code>yes</code>, and is reversible with <code>margin undo</code>.
+      </p>
+    </article>
+
+    <article>
+      <h3>Instant, and honest about it</h3>
+      <p>
+        First paint in about 4&nbsp;ms on a 100-file diff, 15&nbsp;ms on a
+        250k-line lockfile — measured with criterion, budgets enforced in CI.
+        Syntax highlighting is budgeted per frame, so no diff can freeze the UI.
+      </p>
+    </article>
+
+    <article>
+      <h3>A good terminal citizen</h3>
+      <p>
+        Safe as <code>core.pager</code>: piped output is byte-identical to its
+        input, by contract and by test. Honours <code>NO_COLOR</code>, degrades
+        to a real 16-colour palette instead of mangled RGB, and picks a light
+        or dark theme from your terminal's own background.
+      </p>
+    </article>
+
+  </div>
+</section>
+
+<section class="keys">
+  <h2>The whole grammar, roughly</h2>
+  <div class="keygrid">
+    <div><kbd>j</kbd><kbd>k</kbd><span>line</span></div>
+    <div><kbd>J</kbd><kbd>K</kbd><span>hunk</span></div>
+    <div><kbd>]</kbd><kbd>[</kbd><span>file</span></div>
+    <div><kbd>/</kbd><span>search</span></div>
+    <div><kbd>f</kbd><span>jump to file</span></div>
+    <div><kbd>s</kbd><kbd>u</kbd><span>stage / unstage</span></div>
+    <div><kbd>x</kbd><span>discard</span></div>
+    <div><kbd>c</kbd><span>note</span></div>
+    <div><kbd>m</kbd><span>viewed</span></div>
+    <div><kbd>v</kbd><span>split view</span></div>
+    <div><kbd>?</kbd><span>help</span></div>
+    <div><kbd>q</kbd><span>quit</span></div>
+  </div>
+  <p class="more"><a href="docs/keybindings.html">Full reference →</a></p>
+</section>
+
+<section class="usage">
+  <h2>Every way in</h2>
+  <pre><code><span class="c"># the working tree, untracked files included</span>
+margin
+<span class="c"># ...and reload automatically while an agent edits</span>
+margin -w
+
+margin diff --staged        <span class="c"># what's staged</span>
+margin show HEAD~1          <span class="c"># one commit</span>
+margin diff main..feature   <span class="c"># a range</span>
+margin diff old.rs new.rs   <span class="c"># two files, no repo needed</span>
+git diff | margin           <span class="c"># any unified diff on stdin</span>
+margin pr 123               <span class="c"># a GitHub PR, through your own gh</span>
+
+margin --json | jq          <span class="c"># structured changeset for scripts</span>
+margin --notes              <span class="c"># your review notes as Markdown</span></code></pre>
+  <p class="more">
+    No repository handy?
+    <a href="https://github.com/imrajyavardhan12/Margin/tree/main/examples">examples/</a>
+    has runnable demo patches.
+  </p>
+</section>
+
+<section class="compare">
+  <h2>How it compares</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>&nbsp;</th><th>margin</th><th>delta</th><th>difftastic</th><th>gitui</th></tr>
+      </thead>
+      <tbody>
+        <tr><th>Interactive review UI</th><td class="y">yes</td><td class="n">no</td><td class="n">no</td><td class="p">partial</td></tr>
+        <tr><th>Stage / discard by hunk</th><td class="y">yes</td><td class="n">no</td><td class="n">no</td><td class="y">yes</td></tr>
+        <tr><th>Review notes → Markdown</th><td class="y">yes</td><td class="n">no</td><td class="n">no</td><td class="n">no</td></tr>
+        <tr><th>Search across the changeset</th><td class="y">yes</td><td class="p">via less</td><td class="n">no</td><td class="n">no</td></tr>
+        <tr><th>Single binary, no runtime</th><td class="y">yes</td><td class="y">yes</td><td class="y">yes</td><td class="y">yes</td></tr>
+        <tr><th>Structural (AST) diff</th><td class="n">no</td><td class="n">no</td><td class="y">yes</td><td class="n">no</td></tr>
+        <tr><th>Whole-repo management</th><td class="n">no</td><td class="n">no</td><td class="n">no</td><td class="y">yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="more">
+    Margin does one thing: changeset review. For AST diffs use
+    <a href="https://github.com/Wilfred/difftastic">difftastic</a>; for
+    whole-repo work, <a href="https://github.com/gitui-org/gitui">gitui</a>
+    and lazygit are excellent.
+  </p>
+</section>
+
+<section class="contribute">
+  <h2>Contribute</h2>
+  <p>
+    The architecture is written down, every significant decision has an
+    <a href="docs/adr/">ADR</a>, and the whole suite runs without a
+    terminal. Jujutsu support is
+    <a href="https://github.com/imrajyavardhan12/Margin/issues/25">open and up for grabs</a>.
+  </p>
+  <p class="cta-row">
+    <a class="cta" href="https://github.com/imrajyavardhan12/Margin">Star on GitHub</a>
+    <a class="cta ghost" href="https://github.com/imrajyavardhan12/Margin/blob/main/CONTRIBUTING.md">Start contributing</a>
+  </p>
+</section>
+
+</main>
+
+<footer>
+  <p>
+    MIT or Apache-2.0, at your option.
+    Built with <a href="https://ratatui.rs">ratatui</a>,
+    <a href="https://github.com/trishume/syntect">syntect</a>, and
+    <a href="https://libgit2.org">libgit2</a>.
+  </p>
+</footer>
+
+<script>
+  const btn = document.getElementById('copy');
+  const cmd = document.getElementById('install-cmd');
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(cmd.textContent.trim());
+      btn.textContent = 'copied';
+    } catch {
+      btn.textContent = 'press ⌘C';
+      const range = document.createRange();
+      range.selectNodeContents(cmd);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    setTimeout(() => { btn.textContent = 'copy'; }, 2000);
+  });
+</script>
+
+</body>
+</html>

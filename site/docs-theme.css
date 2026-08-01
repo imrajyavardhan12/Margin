@@ -1,0 +1,54 @@
+/* Nudges mdBook's `ayu` theme toward the landing page: same monospace
+   voice, same ink, same square edges. Deliberately small — fighting a
+   theme wholesale is how docs sites rot. */
+
+:root {
+  --margin-add: #6fe3a1;
+  --margin-accent: #7fd1ff;
+}
+
+.menu-title,
+.sidebar .sidebar-scrollbox,
+.chapter li a {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+.menu-title a.margin-home {
+  color: inherit;
+  text-decoration: none;
+}
+.menu-title a.margin-home:hover { text-decoration: underline; }
+
+.content h1,
+.content h2,
+.content h3 {
+  letter-spacing: -0.01em;
+}
+
+.content h2 {
+  border-bottom: 1px solid rgba(127, 209, 255, .18);
+  padding-bottom: .3rem;
+}
+
+/* Tables carry most of Margin's reference material (keys, config keys,
+   the comparison grid) — make them read as data, not prose. */
+.content table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.content table th,
+.content table td {
+  border: 1px solid rgba(255, 255, 255, .08);
+  padding: .45rem .7rem;
+}
+.content table thead th {
+  background: rgba(127, 209, 255, .07);
+}
+
+.content kbd,
+.content code {
+  font-size: .92em;
+}
+
