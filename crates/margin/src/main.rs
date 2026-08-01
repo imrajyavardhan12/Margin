@@ -54,6 +54,11 @@ struct Cli {
     #[arg(long)]
     json: bool,
 
+    /// Print this review's notes as Markdown instead of opening the TUI
+    /// (issue #23) — paste into a pull request or hand to an agent
+    #[arg(long, global = true)]
+    notes: bool,
+
     /// Theme: auto (match the terminal background), ledger, foolscap,
     /// carbon, blueprint
     #[arg(long, global = true, value_name = "NAME")]
@@ -149,6 +154,8 @@ struct Session {
     config: Config,
     theme: Theme,
     json: bool,
+    /// `--notes`: the Markdown notes document replaces the TUI.
+    notes: bool,
 }
 
 fn main() -> ExitCode {
@@ -232,10 +239,17 @@ fn main() -> ExitCode {
         }
         Command::Pager | Command::Undo | Command::Completions { .. } | Command::Man => false,
     };
+    // Both flags ask for a document instead of a review; picking one
+    // silently would be a guess (ADR-0007: refuse loudly).
+    if json && cli.notes {
+        eprintln!("margin: --json and --notes cannot be combined");
+        return ExitCode::from(2);
+    }
     let session = Session {
         config,
         theme,
         json,
+        notes: cli.notes,
     };
 
     match command {
@@ -769,6 +783,12 @@ fn show(
                 return ExitCode::from(2);
             }
         }
+    }
+    // Notes export (issue #23): a document, like --json — so it works
+    // for every source, piped or not, without a TUI.
+    if session.notes {
+        print!("{}", margin_core::notes_markdown(&changeset, &review_notes));
+        return ExitCode::SUCCESS;
     }
     if !std::io::stdout().is_terminal() {
         print_summary(&changeset);

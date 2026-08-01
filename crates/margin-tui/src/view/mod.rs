@@ -181,16 +181,9 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
     );
 }
 
-/// Replace control characters so diff content can never smuggle escape
-/// sequences into the terminal (see SECURITY.md), and expand tabs, which
-/// ratatui renders as zero-width.
+/// The terminal's spelling of the model's sanitization rule
+/// (`margin_core::printable`): one definition, because a second copy is
+/// a second place for an escape sequence to slip through (SECURITY.md).
 pub(crate) fn printable(content: &[u8]) -> String {
-    String::from_utf8_lossy(content)
-        .chars()
-        .flat_map(|c| match c {
-            '\t' => "    ".chars().collect::<Vec<_>>(),
-            c if c.is_control() => vec!['\u{fffd}'],
-            c => vec![c],
-        })
-        .collect()
+    margin_core::printable(content)
 }

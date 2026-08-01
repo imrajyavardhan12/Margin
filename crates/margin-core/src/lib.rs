@@ -30,6 +30,7 @@ pub mod digest;
 pub mod intraline;
 pub mod json;
 pub mod model;
+pub mod notes;
 pub mod patch;
 pub mod render;
 
@@ -38,6 +39,7 @@ pub use collapse::{glob_match, is_generated};
 pub use digest::{file_digest, hunk_digest};
 pub use intraline::{intraline_ranges, paired_changes};
 pub use json::{json_changeset, JsonChangeset, JSON_SCHEMA_VERSION};
-pub use model::{ByteStr, Changeset, FileDiff, FileStatus, Hunk, Line, LineKind};
+pub use model::{printable, ByteStr, Changeset, FileDiff, FileStatus, Hunk, Line, LineKind};
+pub use notes::notes_markdown;
 pub use patch::{parse_unified, ParseOutcome, ParseWarning};
 pub use render::{render_hunk_patch, render_reversed_hunk_patch, RenderRefusal};

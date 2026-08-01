@@ -596,8 +596,12 @@ impl AppState {
             .filter_map(|(&(f, h), text)| {
                 let file = self.changeset.files.get(f)?;
                 let hunk = file.hunks.get(h)?;
+                // Must be the *same* derivation `set_notes` compares
+                // against (raw `path_key`, lossily stringified) — not
+                // `display_path`, whose control-character substitution
+                // would round-trip to a key that never matches again.
                 Some((
-                    file.display_path().into_owned(),
+                    String::from_utf8_lossy(path_key(file)?).into_owned(),
                     margin_core::hunk_digest(hunk),
                     text.clone(),
                 ))

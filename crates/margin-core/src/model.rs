@@ -87,6 +87,7 @@ impl FileDiff {
     /// (the patch parser legitimately decodes `\033` in quoted paths), and a
     /// crafted path must never be able to emit escape sequences through any
     /// render site (see SECURITY.md).
+    /// See [`printable`] for the same rule applied to arbitrary content.
     pub fn display_path(&self) -> Cow<'_, str> {
         let path = self
             .new_path
@@ -165,6 +166,24 @@ impl Line {
     pub fn content_lossy(&self) -> Cow<'_, str> {
         String::from_utf8_lossy(&self.content)
     }
+}
+
+/// Replace control characters so diff content can never smuggle escape
+/// sequences into whatever renders it (see SECURITY.md), and expand tabs,
+/// which terminals and Markdown both handle badly.
+///
+/// This lives in the model, not the TUI, because every *rendering* of
+/// untrusted bytes owes the same guarantee — the terminal views, and the
+/// Markdown notes export (issue #23) alike.
+pub fn printable(content: &[u8]) -> String {
+    String::from_utf8_lossy(content)
+        .chars()
+        .flat_map(|c| match c {
+            '\t' => "    ".chars().collect::<Vec<_>>(),
+            c if c.is_control() => vec!['\u{fffd}'],
+            c => vec![c],
+        })
+        .collect()
 }
 
 #[cfg(test)]

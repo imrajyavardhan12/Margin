@@ -489,6 +489,42 @@ fn every_example_patch_parses_without_warnings() {
     assert!(seen >= 5, "examples/ should keep its demo patches ({seen})");
 }
 
+/// `--notes` (issue #23) prints the Markdown document instead of the
+/// TUI, refuses to be combined with `--json`, and says so honestly when
+/// a review has no notes.
+#[test]
+fn notes_export_is_a_document_like_json() {
+    let dir = undo_repo();
+    std::fs::write(dir.path().join("f.txt"), "one\nTWO\n").unwrap();
+    let no_config = dir.path().join("none.toml");
+
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &no_config)
+        .env("MARGIN_DATA", dir.path().join("data"))
+        .arg("--notes")
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc = String::from_utf8_lossy(&out.stdout);
+    assert!(doc.starts_with("# Review notes"), "{doc}");
+    assert!(doc.contains("_No notes recorded"), "{doc}");
+
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &no_config)
+        .args(["--notes", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "ADR-0007: refuse loudly");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot be combined"));
+}
+
 #[test]
 fn version_flag_works() {
     let out = margin().arg("--version").output().unwrap();
