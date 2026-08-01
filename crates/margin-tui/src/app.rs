@@ -524,7 +524,7 @@ impl AppState {
     /// Swap the visual theme, rebuilding the highlight cache so syntax
     /// colors come from the new theme (or disappear in degraded modes).
     pub fn apply_theme(&mut self, theme: crate::theme::Theme) {
-        self.highlight = crate::highlight::HighlightCache::new(theme.syntax_theme);
+        self.highlight = crate::highlight::HighlightCache::new(theme.syntax_theme.as_deref());
         self.theme = theme;
     }
 
@@ -927,7 +927,7 @@ impl AppState {
         self.rows = build_rows(&self.changeset, self.split_active, &flags);
         self.cursor = anchor.map_or(0, |a| locate(&self.rows, a));
         self.clamp_cursor();
-        self.highlight = crate::highlight::HighlightCache::new(self.theme.syntax_theme);
+        self.highlight = crate::highlight::HighlightCache::new(self.theme.syntax_theme.as_deref());
         if let Some(search) = &mut self.search {
             recompute_matches(search, &self.rows, &self.changeset);
         }

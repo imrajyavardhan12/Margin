@@ -190,9 +190,22 @@ fn main() -> ExitCode {
     } else {
         config.theme.clone()
     };
-    let Some(theme) = Theme::resolve(&theme_name, config::detect_color_mode()) else {
+    // Custom themes first (issue #15): a `[themes.ledger]` deliberately
+    // shadows the built-in, which also lets `auto` pick up the tweak.
+    let mode = config::detect_color_mode();
+    let theme = if let Some(custom) = config.themes.get(&theme_name) {
+        match custom.build(&theme_name, mode) {
+            Ok(theme) => theme,
+            Err(message) => {
+                eprintln!("margin: config error {message}");
+                return ExitCode::from(2);
+            }
+        }
+    } else if let Some(theme) = Theme::resolve(&theme_name, mode) {
+        theme
+    } else {
         eprintln!(
-            "margin: unknown theme '{theme_name}' (auto, or built-in themes: {})",
+            "margin: unknown theme '{theme_name}' (auto, built-in themes: {}, or a [themes.<name>] from your config)",
             THEME_NAMES.join(", ")
         );
         return ExitCode::from(2);

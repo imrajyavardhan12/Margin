@@ -26,6 +26,7 @@ never silently ignored.
 # User config: full surface.
 theme = "auto"             # auto | ledger | foolscap | carbon | blueprint
                            # auto matches the terminal background (themes.md)
+                           # or the name of a [themes.<name>] section
 layout = "auto"            # auto | unified | split
 include_untracked = true   # show untracked files in `margin` / `margin diff`
                            # (`--no-untracked` overrides per invocation)
@@ -35,6 +36,10 @@ collapse = []              # globs to auto-collapse (za expands), on top of
                            # built-in lockfile/generated heuristics; `*` stays
                            # within a path segment, `**` crosses, `?` is one
                            # char; slash-less patterns match the basename
+
+[themes.mocha]             # custom themes (themes.md#custom-themes): a
+base = "carbon"            # built-in base plus #rrggbb overrides; user
+addition = "#3ddc84"       # config only — never the repo file
 ```
 
 ### Repo config is display-only

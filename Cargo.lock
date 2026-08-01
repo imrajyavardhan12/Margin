@@ -1181,6 +1181,7 @@ dependencies = [
  "margin-core",
  "ratatui",
  "regex",
+ "serde",
  "syntect",
  "unicode-width",
 ]

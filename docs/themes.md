@@ -34,6 +34,53 @@ Margin degrades deliberately instead of accidentally:
 
 ## Custom themes
 
-User-defined themes (TOML, inheriting a built-in base and overriding
-colors) are planned — see issue #15. The theme schema is being kept small
-until then so custom themes can rely on it.
+Define your own in the **user** config file (issue #15): a
+`[themes.<name>]` section names a built-in `base` and overrides only the
+keys you care about, then `theme = "<name>"` selects it:
+
+```toml
+theme = "mocha"
+
+[themes.mocha]
+base = "carbon"            # any built-in: ledger, foolscap, carbon, blueprint
+addition = "#3ddc84"       # ink keys set the foreground
+addition_tint = "#0d3318"  # tint keys set the background
+syntax_theme = "base16-mocha.dark"
+```
+
+Rules:
+
+- All colors are strict `#rrggbb`. Anything else is a config error
+  naming the key, as are misspelled keys (ADR-0008).
+- Unset keys inherit the base's full style — colors *and* modifiers
+  (bold, italic), so overriding a color never un-bolds a header.
+- Naming a custom theme after a built-in (`[themes.ledger]`) shadows
+  it — including when `auto` picks it — which is how you *tweak* the
+  default rather than replace it.
+- Degraded modes win regardless: on a 16-color terminal or under
+  `NO_COLOR` a custom theme renders as the standard degraded palette,
+  never as mangled RGB.
+- **User config only.** A repo-local `.margin.toml` may *select* a theme
+  but never define one: a checked-out repository that could restyle
+  your diff could also paint additions in the background color and hide
+  injected code from review.
+
+### Schema (a stability surface)
+
+Ink keys (foreground): `addition`, `deletion`, `context`, `line_no`,
+`hunk_header`, `meta`, `sidebar_title`, `sidebar_selected`,
+`sidebar_staged`, `help_border`.
+
+Background keys: `addition_tint`, `deletion_tint`, `addition_emphasis`,
+`deletion_emphasis`, `cursor_line`, `search_match`.
+
+Two-color surfaces: `file_header_fg` / `file_header_bg`,
+`status_bar_fg` / `status_bar_bg`.
+
+Other: `base` (required), `syntax_theme` — one of the bundled syntect
+themes: `InspiredGitHub`, `Solarized (dark)`, `Solarized (light)`,
+`base16-eighties.dark`, `base16-mocha.dark`, `base16-ocean.dark`,
+`base16-ocean.light`. An unknown name errors listing these.
+
+These key names are stable: removing or renaming one is a breaking
+change and gets a CHANGELOG entry like any CLI surface.
