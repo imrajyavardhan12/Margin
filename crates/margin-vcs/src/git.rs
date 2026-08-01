@@ -203,6 +203,39 @@ fn resolve_tree<'r>(repo: &'r Repository, spec: &str) -> Result<Tree<'r>, Source
         })
 }
 
+/// The set of paths with staged content — index vs HEAD, **paths only**
+/// (issue #62).
+///
+/// The sidebar's staged dots need names, not content, and every
+/// stage/unstage/discard/reload refreshes them. Loading a full
+/// [`GitStaged`] changeset for that materializes every hunk and line of
+/// every staged file — work whose cost grows with how much is staged, to
+/// render one dot per name. Enumerating deltas instead costs the number
+/// of staged *files*.
+///
+/// Rename detection stays: dropping it would split a staged rename into
+/// its old and new paths and dot a recreated old path that has no staged
+/// content of its own. Its cost scales with adds/deletes, not with total
+/// diff size, so it is not what this function exists to avoid.
+pub fn staged_paths(repo_path: &Path) -> Result<Vec<Vec<u8>>, SourceError> {
+    let repo = open_repo(repo_path)?;
+    let head = head_tree(&repo)?;
+    let mut opts = base_options();
+    let mut diff = repo.diff_tree_to_index(head.as_ref(), None, Some(&mut opts))?;
+    detect_renames(&mut diff)?;
+    Ok(diff
+        .deltas()
+        .filter(|delta| map_status(delta.status()).is_some())
+        .filter_map(|delta| {
+            delta
+                .new_file()
+                .path_bytes()
+                .or_else(|| delta.old_file().path_bytes())
+                .map(<[u8]>::to_vec)
+        })
+        .collect())
+}
+
 fn base_options() -> DiffOptions {
     let mut opts = DiffOptions::new();
     opts.include_typechange(true);
