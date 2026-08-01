@@ -753,10 +753,12 @@ fn watch_relevant(path: &Path) -> bool {
 /// of staged paths. Best-effort — the indicator is advisory, so a failure
 /// (unborn branch, transient git error) simply yields an empty summary
 /// rather than blocking the review.
+/// The sidebar's staged set. Paths only (issue #62): loading a full
+/// staged changeset here diffed every staged blob on every action for
+/// information the sidebar renders as a single dot.
 fn load_staged(repo: &Path) -> margin_tui::StagedFiles {
-    GitStaged::new(repo.to_path_buf())
-        .load()
-        .map(|changeset| margin_tui::StagedFiles::from_staged_changeset(&changeset))
+    margin_vcs::staged_paths(repo)
+        .map(margin_tui::StagedFiles::from_paths)
         .unwrap_or_default()
 }
 

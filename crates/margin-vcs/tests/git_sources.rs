@@ -265,3 +265,56 @@ fn diff_ids_are_stable_and_distinct() {
     assert_eq!(worktree.id(), GitWorktree::new(t.path()).id());
     assert_ne!(worktree.id(), GitStaged::new(t.path()).id());
 }
+
+/// `staged_paths` (issue #62) is the cheap spelling of "which files have
+/// staged content": it must name exactly the files a full `GitStaged`
+/// load would, across adds, edits, deletes, and renames.
+#[test]
+fn staged_paths_agrees_with_a_full_staged_load() {
+    let repo = TestRepo::new();
+    repo.write("keep.txt", "one\n");
+    repo.write("edit.txt", "before\n");
+    repo.write("gone.txt", "doomed\n");
+    repo.write("old-name.txt", "content that stays identical\n");
+    for f in ["keep.txt", "edit.txt", "gone.txt", "old-name.txt"] {
+        repo.stage(f);
+    }
+    repo.commit("base");
+
+    // A staged edit, a staged add, a staged delete, and a staged rename.
+    repo.write("edit.txt", "after\n");
+    repo.stage("edit.txt");
+    repo.write("added.txt", "brand new\n");
+    repo.stage("added.txt");
+    let mut index = repo.repo.index().unwrap();
+    index.remove_path(Path::new("gone.txt")).unwrap();
+    index.remove_path(Path::new("old-name.txt")).unwrap();
+    index.write().unwrap();
+    repo.write("new-name.txt", "content that stays identical\n");
+    repo.stage("new-name.txt");
+
+    let mut cheap = margin_vcs::staged_paths(repo.path()).expect("staged paths");
+    cheap.sort();
+
+    let changeset = GitStaged::new(repo.path().to_path_buf())
+        .load()
+        .expect("staged load");
+    let mut full: Vec<Vec<u8>> = changeset
+        .files
+        .iter()
+        .filter_map(|f| f.new_path.as_deref().or(f.old_path.as_deref()))
+        .map(<[u8]>::to_vec)
+        .collect();
+    full.sort();
+
+    assert_eq!(
+        cheap,
+        full,
+        "cheap: {:?}",
+        cheap
+            .iter()
+            .map(|p| String::from_utf8_lossy(p).into_owned())
+            .collect::<Vec<_>>()
+    );
+    assert!(!cheap.is_empty(), "the fixture must stage something");
+}

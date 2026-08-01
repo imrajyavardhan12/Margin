@@ -5,6 +5,14 @@ release notes are hand-curated on top in GitHub Releases.
 
 ## [Unreleased]
 
+### Performance
+
+- The sidebar's staged-file summary no longer loads a full index-vs-HEAD
+  changeset (issue #62). It enumerates diff deltas instead, so the cost
+  tracks the number of staged files rather than their content — measured
+  at 101 ms → 2.2 ms (45x) on a repo with 800 staged files, on every
+  stage, unstage, discard, and reload.
+
 ### Added
 
 - Review notes (issue #23): `c` annotates the hunk under the cursor with

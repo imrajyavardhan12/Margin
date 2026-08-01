@@ -183,14 +183,22 @@ pub struct StagedFiles {
 
 impl StagedFiles {
     /// Reduce an index-vs-HEAD changeset to the set of staged paths.
+    /// Tests build summaries this way; the binary uses [`Self::from_paths`],
+    /// which skips materializing content it would only throw away.
     pub fn from_staged_changeset(changeset: &Changeset) -> Self {
-        Self {
-            paths: changeset
+        Self::from_paths(
+            changeset
                 .files
                 .iter()
                 .filter_map(path_key)
-                .map(<[u8]>::to_vec)
-                .collect(),
+                .map(<[u8]>::to_vec),
+        )
+    }
+
+    /// The staged set straight from path bytes (issue #62).
+    pub fn from_paths(paths: impl IntoIterator<Item = Vec<u8>>) -> Self {
+        Self {
+            paths: paths.into_iter().collect(),
         }
     }
 
