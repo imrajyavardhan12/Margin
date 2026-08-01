@@ -38,7 +38,7 @@ jobs:
       # deeper instead of re-discovering the same frontier from the static
       # seeds. run_id in the key makes every run save; restore-keys pulls
       # the most recent prior corpus.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
