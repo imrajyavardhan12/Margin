@@ -1,0 +1,88 @@
+# Publishes the landing page + mdBook docs to GitHub Pages.
+#
+# Path-filtered on purpose: a Rust-only change should not rebuild the
+# site, and a site-only change should not look like it needs the Rust CI
+# to pass. The docs themselves live in docs/ and are served straight from
+# there, so a flag and its documentation stay in one pull request.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "book.toml"
+      - "assets/demo.gif"
+      - "assets/social-card.png"
+      - "CHANGELOG.md"
+      - "CONTRIBUTING.md"
+      - ".github/workflows/pages.yml"
+  # Lets a release be reflected on the site without waiting for a docs edit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never publish two builds at once; let a newer push win, but don't
+# cancel a run that is already uploading.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install mdBook
+        env:
+          MDBOOK_VERSION: "0.5.4"
+        run: |
+          curl -fsSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C /usr/local/bin
+          mdbook --version
+
+      - name: Build site
+        run: site/build.sh
+
+      - name: Check no link points at a page we did not build
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          root = pathlib.Path("site/build")
+          missing = []
+          for page in root.rglob("*.html"):
+              html = page.read_text(encoding="utf-8", errors="replace")
+              for ref in re.findall(r'(?:href|src)="([^"#?]+)"', html):
+                  if ref.startswith(("http", "data:", "mailto:", "//")):
+                      continue
+                  target = (page.parent / ref).resolve()
+                  if target.is_dir():
+                      target = target / "index.html"
+                  if not target.exists():
+                      missing.append(f"{page.relative_to(root)} -> {ref}")
+          if missing:
+              print("broken internal links:")
+              print("\n".join(sorted(set(missing))))
+              sys.exit(1)
+          print("internal links ok")
+          PY
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
