@@ -12,7 +12,11 @@ release notes are hand-curated on top in GitHub Releases.
   the sidebar. Enter saves, empty input deletes, Esc cancels. Notes
   persist per review beside viewed marks, keyed by a digest of that hunk,
   so they survive reloads and detach when the hunk itself changes.
-  Markdown export lands next.
+- `margin --notes` prints those notes as Markdown instead of opening the
+  TUI — each note under its file with a `path:line` anchor and its hunk
+  header, ready to paste into a pull request or hand to an agent. Works
+  for every review source (`--notes` is global, like `--json`, and the
+  two refuse to be combined).
 
 ## [0.4.0] - 2026-08-01
 
