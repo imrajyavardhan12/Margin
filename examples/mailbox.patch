@@ -1,0 +1,23 @@
+From 8f7a2b1c3d4e5f60718293a4b5c6d7e8f9012345 Mon Sep 17 00:00:00 2001
+From: Ada Lovelace <ada@example.org>
+Date: Tue, 14 Jul 2026 09:00:00 +0200
+Subject: [PATCH] fix: off-by-one in pagination
+
+The last page dropped its final row when total was an exact multiple
+of the page size.
+---
+ src/page.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/page.rs b/src/page.rs
+index 1234567..89abcde 100644
+--- a/src/page.rs
++++ b/src/page.rs
+@@ -8,6 +8,6 @@ impl Pager {
+     /// Index of the last page for `total` rows.
+     fn last_index(&self, total: usize) -> usize {
+-        total / self.page_size
++        total.div_ceil(self.page_size)
+     }
+ 
+     fn rows(&self) -> usize {

@@ -428,6 +428,34 @@ fn man_subcommand_emits_roff() {
     assert!(page.contains(".SH SYNOPSIS"));
 }
 
+/// The examples directory's promise (issue #17): every shipped demo
+/// patch opens with zero parse warnings — warnings go to stderr, so an
+/// empty stderr on a `--json` run is the assertion.
+#[test]
+fn every_example_patch_parses_without_warnings() {
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+    let mut seen = 0;
+    for entry in std::fs::read_dir(&examples).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "patch") {
+            continue;
+        }
+        seen += 1;
+        let out = margin()
+            .args(["patch", path.to_str().unwrap(), "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", path.display());
+        assert!(
+            out.stderr.is_empty(),
+            "{}: {}",
+            path.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    assert!(seen >= 5, "examples/ should keep its demo patches ({seen})");
+}
+
 #[test]
 fn version_flag_works() {
     let out = margin().arg("--version").output().unwrap();

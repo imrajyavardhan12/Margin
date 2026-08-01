@@ -82,6 +82,9 @@ margin pr 123                 # review a GitHub PR (via the gh CLI)
 margin diff --json | jq       # structured changeset for scripts and agents
 ```
 
+No repository handy? [`examples/`](examples/) has runnable demo
+patches: `margin patch examples/rust-refactor.patch`.
+
 Make it your Git pager — safe even for scripted/piped git, by contract:
 
 ```bash
