@@ -3,7 +3,7 @@
 All notable changes to Margin. Generated from Conventional Commits by git-cliff;
 release notes are hand-curated on top in GitHub Releases.
 
-## [Unreleased]
+## [0.5.1] - 2026-08-02
 
 ### Fixed
 
