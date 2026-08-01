@@ -3,15 +3,10 @@
 All notable changes to Margin. Generated from Conventional Commits by git-cliff;
 release notes are hand-curated on top in GitHub Releases.
 
-## [Unreleased]
+## [0.5.0] - 2026-08-01
 
-### Performance
-
-- The sidebar's staged-file summary no longer loads a full index-vs-HEAD
-  changeset (issue #62). It enumerates diff deltas instead, so the cost
-  tracks the number of staged files rather than their content — measured
-  at 101 ms → 2.2 ms (45x) on a repo with 800 staged files, on every
-  stage, unstage, discard, and reload.
+The reviewer's half of the agent loop: annotate what you read, export it
+for whoever fixes it.
 
 ### Added
 
@@ -25,6 +20,14 @@ release notes are hand-curated on top in GitHub Releases.
   header, ready to paste into a pull request or hand to an agent. Works
   for every review source (`--notes` is global, like `--json`, and the
   two refuse to be combined).
+
+### Performance
+
+- The sidebar's staged-file summary no longer loads a full index-vs-HEAD
+  changeset (issue #62). It enumerates diff deltas instead, so the cost
+  tracks the number of staged files rather than their content — measured
+  at 101 ms → 2.2 ms (45x) on a repo with 800 staged files, on every
+  stage, unstage, discard, and reload.
 
 ## [0.4.0] - 2026-08-01
 
