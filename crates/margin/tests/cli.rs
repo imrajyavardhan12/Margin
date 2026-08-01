@@ -312,6 +312,56 @@ fn unknown_theme_exits_2_listing_builtins() {
     );
 }
 
+/// `margin completions <shell>` (issue #16, ADR-0016): every supported
+/// shell emits its dialect's registration form, and a broken config file
+/// must not interfere — completions run from shell rc files, before any
+/// config is trusted.
+#[test]
+fn completions_cover_the_four_shells_despite_broken_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let bad_config = dir.path().join("config.toml");
+    std::fs::write(&bad_config, "not even = [ toml\n").unwrap();
+
+    for (shell, marker) in [
+        ("bash", "_margin()"),
+        ("zsh", "#compdef margin"),
+        ("fish", "complete"),
+        ("powershell", "Register-ArgumentCompleter"),
+    ] {
+        let out = margin()
+            .current_dir(dir.path())
+            .env("MARGIN_CONFIG", &bad_config)
+            .args(["completions", shell])
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{shell}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains(marker),
+            "{shell} output lacks {marker:?}"
+        );
+    }
+}
+
+/// `margin man` (hidden; ADR-0016) emits a roff page whose title line
+/// carries the binary name and section 1 — what `man -l` renders.
+#[test]
+fn man_subcommand_emits_roff() {
+    let out = margin().arg("man").output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let page = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        page.contains(".TH margin 1"),
+        "{}",
+        &page[..page.len().min(120)]
+    );
+    assert!(page.contains(".SH SYNOPSIS"));
+}
+
 #[test]
 fn version_flag_works() {
     let out = margin().arg("--version").output().unwrap();
