@@ -31,6 +31,7 @@ pub fn msg_for_key(key: KeyEvent, mode: InputMode) -> Option<Msg> {
         InputMode::Search => search(key),
         InputMode::Picker => picker(key, ctrl),
         InputMode::Confirm => confirm(key),
+        InputMode::Note => note(key),
         InputMode::Fold => fold(key),
     }
 }
@@ -70,6 +71,7 @@ fn normal(key: KeyEvent, ctrl: bool) -> Option<Msg> {
         KeyCode::Char('x') => Some(Msg::DiscardHunk),
         KeyCode::Char('r') => Some(Msg::Reload),
         KeyCode::Char('m') => Some(Msg::ToggleViewed),
+        KeyCode::Char('c') => Some(Msg::NoteStart),
         KeyCode::Char('z') => Some(Msg::ZKey),
         KeyCode::Char('v') => Some(Msg::ToggleLayout),
         KeyCode::Char('w') => Some(Msg::ToggleWrap),
@@ -99,6 +101,17 @@ fn confirm(key: KeyEvent) -> Option<Msg> {
         KeyCode::Enter => Some(Msg::ConfirmSubmit),
         KeyCode::Backspace => Some(Msg::ConfirmBackspace),
         KeyCode::Char(c) => Some(Msg::ConfirmInput(c)),
+        _ => None,
+    }
+}
+
+/// Note editor (issue #23): a plain one-line text field.
+fn note(key: KeyEvent) -> Option<Msg> {
+    match key.code {
+        KeyCode::Esc => Some(Msg::NoteCancel),
+        KeyCode::Enter => Some(Msg::NoteSubmit),
+        KeyCode::Backspace => Some(Msg::NoteBackspace),
+        KeyCode::Char(c) => Some(Msg::NoteInput(c)),
         _ => None,
     }
 }

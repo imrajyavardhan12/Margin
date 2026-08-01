@@ -35,7 +35,7 @@ pub mod render;
 
 pub use ansi::strip_ansi;
 pub use collapse::{glob_match, is_generated};
-pub use digest::file_digest;
+pub use digest::{file_digest, hunk_digest};
 pub use intraline::{intraline_ranges, paired_changes};
 pub use json::{json_changeset, JsonChangeset, JSON_SCHEMA_VERSION};
 pub use model::{ByteStr, Changeset, FileDiff, FileStatus, Hunk, Line, LineKind};

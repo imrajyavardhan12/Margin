@@ -8,7 +8,7 @@
 //! change-detection, not cryptography: an adversarial collision merely
 //! keeps a checkmark.
 
-use crate::model::{FileDiff, LineKind};
+use crate::model::{FileDiff, Hunk, LineKind};
 
 /// Digest of everything reviewable about a file's diff: status, paths,
 /// modes, binary flag, and every hunk's geometry and line bytes.
@@ -27,21 +27,35 @@ pub fn file_digest(file: &FileDiff) -> u64 {
     h.u32(file.new_mode.unwrap_or(0));
     h.byte(u8::from(file.is_binary));
     for hunk in &file.hunks {
-        h.u32(hunk.old_start);
-        h.u32(hunk.old_count);
-        h.u32(hunk.new_start);
-        h.u32(hunk.new_count);
-        for line in &hunk.lines {
-            h.byte(match line.kind {
-                LineKind::Context => b' ',
-                LineKind::Addition => b'+',
-                LineKind::Deletion => b'-',
-            });
-            h.bytes(&line.content);
-            h.byte(u8::from(line.no_newline));
-        }
+        hunk_fields(&mut h, hunk);
     }
     h.finish()
+}
+
+/// Digest of one hunk's geometry and line bytes (issue #23): the stable
+/// half of a review note's key, so a note stays attached to *its* hunk
+/// when other hunks in the file move, and detaches when the hunk itself
+/// changes — the same content-addressed rule viewed marks use.
+pub fn hunk_digest(hunk: &Hunk) -> u64 {
+    let mut h = Fnv::new();
+    hunk_fields(&mut h, hunk);
+    h.finish()
+}
+
+fn hunk_fields(h: &mut Fnv, hunk: &Hunk) {
+    h.u32(hunk.old_start);
+    h.u32(hunk.old_count);
+    h.u32(hunk.new_start);
+    h.u32(hunk.new_count);
+    for line in &hunk.lines {
+        h.byte(match line.kind {
+            LineKind::Context => b' ',
+            LineKind::Addition => b'+',
+            LineKind::Deletion => b'-',
+        });
+        h.bytes(&line.content);
+        h.byte(u8::from(line.no_newline));
+    }
 }
 
 /// Digest of arbitrary bytes (same stable FNV-1a): used to derive
@@ -137,5 +151,34 @@ mod tests {
         // viewed marks silently invalidate. Change it only deliberately.
         let file = &parse_unified(A).changeset.files[0];
         assert_eq!(file_digest(file), 0x511e_bea2_0318_2e2b);
+    }
+
+    #[test]
+    fn hunk_digest_is_pinned_and_content_addressed() {
+        // Persisted too (review notes, issue #23): same pin discipline.
+        let file = &parse_unified(A).changeset.files[0];
+        let first = hunk_digest(&file.hunks[0]);
+        assert_eq!(first, 0x1f41_a77f_33b1_d978);
+
+        // A note follows its own hunk: editing a *different* hunk must
+        // not move this one's digest, while editing this one must.
+        let edited = parse_unified(
+            b"--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n@@ -9,1 +9,1 @@\n-nine\n+NINE\n",
+        )
+        .changeset;
+        let same = parse_unified(
+            b"--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n@@ -9,1 +9,1 @@\n-nine\n+9\n",
+        )
+        .changeset;
+        assert_eq!(
+            hunk_digest(&edited.files[0].hunks[0]),
+            hunk_digest(&same.files[0].hunks[0]),
+            "an edit elsewhere leaves this hunk's note attached"
+        );
+        assert_ne!(
+            hunk_digest(&edited.files[0].hunks[1]),
+            hunk_digest(&same.files[0].hunks[1]),
+            "editing the hunk itself detaches its note"
+        );
     }
 }

@@ -92,6 +92,21 @@ fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
         return;
     }
 
+    // The note editor owns the line while open (issue #23): it names the
+    // hunk's file and echoes the typed text, which update() has already
+    // filtered of control characters.
+    if let Some(note) = &state.note {
+        let line = format!(
+            " note on {} \u{2014} \u{23ce} saves, empty deletes, Esc cancels  {}\u{258c}",
+            note.label, note.input
+        );
+        frame.render_widget(
+            Paragraph::new(TLine::from(line)).style(state.theme.status_bar),
+            area,
+        );
+        return;
+    }
+
     // The search bar takes over the status line while typing.
     if let Some(search) = &state.search {
         if search.typing {

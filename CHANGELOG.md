@@ -3,6 +3,17 @@
 All notable changes to Margin. Generated from Conventional Commits by git-cliff;
 release notes are hand-curated on top in GitHub Releases.
 
+## [Unreleased]
+
+### Added
+
+- Review notes (issue #23): `c` annotates the hunk under the cursor with
+  a one-line remark, shown inline on the hunk header with a `✎` count in
+  the sidebar. Enter saves, empty input deletes, Esc cancels. Notes
+  persist per review beside viewed marks, keyed by a digest of that hunk,
+  so they survive reloads and detach when the hunk itself changes.
+  Markdown export lands next.
+
 ## [0.4.0] - 2026-08-01
 
 Make it yours: custom themes, mouse support, shell completions, and
