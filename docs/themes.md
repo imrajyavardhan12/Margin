@@ -69,7 +69,8 @@ Rules:
 
 Ink keys (foreground): `addition`, `deletion`, `context`, `line_no`,
 `hunk_header`, `meta`, `sidebar_title`, `sidebar_selected`,
-`sidebar_staged`, `help_border`.
+`sidebar_staged`, `help_border`, `note` (review notes shown inline on a
+hunk header).
 
 Background keys: `addition_tint`, `deletion_tint`, `addition_emphasis`,
 `deletion_emphasis`, `cursor_line`, `search_match`.

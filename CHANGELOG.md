@@ -3,6 +3,18 @@
 All notable changes to Margin. Generated from Conventional Commits by git-cliff;
 release notes are hand-curated on top in GitHub Releases.
 
+## [Unreleased]
+
+### Fixed
+
+- Review notes were invisible while the cursor sat on their hunk — the
+  moment right after typing one. They used the dim `meta` style, whose
+  grey is the cursor line's background grey in several themes. Notes now
+  have their own theme slot (`note`, overridable in custom themes), and
+  a style-assertion test checks legibility on the cursor line in every
+  theme and colour mode — symbol snapshots cannot see colour, which is
+  why this shipped in 0.5.0 unnoticed.
+
 ## [0.5.0] - 2026-08-01
 
 The reviewer's half of the agent loop: annotate what you read, export it

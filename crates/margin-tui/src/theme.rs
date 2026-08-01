@@ -53,6 +53,12 @@ pub struct Theme {
     pub help_border: Style,
     /// Search match highlight (`/` results).
     pub search_match: Style,
+    /// Review notes shown inline on a hunk header (issue #23). Its own
+    /// slot rather than reusing `meta`: `meta`'s dim grey is deliberately
+    /// the *background* grey in several themes, so a note sitting under
+    /// the cursor — the moment right after you type it — rendered
+    /// invisible. A note must read on the cursor line too.
+    pub note: Style,
     /// syntect theme used for code coloring; `None` disables syntax
     /// highlighting (16-color and monochrome modes).
     pub syntax_theme: Option<String>,
@@ -108,6 +114,7 @@ pub struct CustomTheme {
     pub sidebar_selected: Option<String>,
     pub sidebar_staged: Option<String>,
     pub help_border: Option<String>,
+    pub note: Option<String>,
     // Background keys.
     pub addition_tint: Option<String>,
     pub deletion_tint: Option<String>,
@@ -169,6 +176,7 @@ impl CustomTheme {
         )?;
         theme.sidebar_staged = fg(theme.sidebar_staged, "sidebar_staged", &self.sidebar_staged)?;
         theme.help_border = fg(theme.help_border, "help_border", &self.help_border)?;
+        theme.note = fg(theme.note, "note", &self.note)?;
 
         theme.addition_tint = bg(theme.addition_tint, "addition_tint", &self.addition_tint)?;
         theme.deletion_tint = bg(theme.deletion_tint, "deletion_tint", &self.deletion_tint)?;
@@ -260,6 +268,9 @@ fn ledger() -> Theme {
         status_bar: Style::default().fg(Color::Black).bg(Color::Gray),
         help_border: Style::default().fg(Color::Cyan),
         search_match: Style::default().bg(rgb(0x6b5d00)),
+        note: Style::default()
+            .fg(rgb(0xd8b26a))
+            .add_modifier(Modifier::ITALIC),
         syntax_theme: Some("base16-ocean.dark".into()),
     }
 }
@@ -294,6 +305,9 @@ fn foolscap() -> Theme {
         status_bar: Style::default().fg(Color::White).bg(rgb(0x4b5563)),
         help_border: Style::default().fg(rgb(0x1d4ed8)),
         search_match: Style::default().bg(rgb(0xffe9a0)),
+        note: Style::default()
+            .fg(rgb(0x8a5a00))
+            .add_modifier(Modifier::ITALIC),
         syntax_theme: Some("InspiredGitHub".into()),
     }
 }
@@ -330,6 +344,9 @@ fn carbon() -> Theme {
         status_bar: Style::default().fg(Color::Black).bg(rgb(0xd0d0d0)),
         help_border: Style::default().fg(rgb(0xf0c674)),
         search_match: Style::default().bg(rgb(0x806000)),
+        note: Style::default()
+            .fg(rgb(0xf0c674))
+            .add_modifier(Modifier::ITALIC),
         syntax_theme: Some("base16-eighties.dark".into()),
     }
 }
@@ -364,6 +381,9 @@ fn blueprint() -> Theme {
         status_bar: Style::default().fg(rgb(0xdcecfb)).bg(rgb(0x102a43)),
         help_border: Style::default().fg(rgb(0x7fd1ff)),
         search_match: Style::default().bg(rgb(0x6e5d12)),
+        note: Style::default()
+            .fg(rgb(0xe8c46a))
+            .add_modifier(Modifier::ITALIC),
         syntax_theme: Some("Solarized (dark)".into()),
     }
 }
@@ -402,6 +422,7 @@ fn ansi16() -> Theme {
         status_bar: Style::default().fg(Color::Black).bg(Color::Gray),
         help_border: Style::default().fg(Color::Cyan),
         search_match: Style::default().fg(Color::Black).bg(Color::Yellow),
+        note: Style::default().fg(Color::Yellow),
         syntax_theme: None,
     }
 }
@@ -428,6 +449,7 @@ fn monochrome() -> Theme {
         status_bar: plain.add_modifier(Modifier::REVERSED),
         help_border: plain,
         search_match: plain.add_modifier(Modifier::UNDERLINED),
+        note: plain.add_modifier(Modifier::ITALIC),
         syntax_theme: None,
     }
 }

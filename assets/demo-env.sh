@@ -2,6 +2,9 @@
 # binary on PATH and stage a small repo with reviewable changes, so the GIF
 # opens with plain `margin diff`. Regenerate the GIF with: vhs assets/demo.tape
 export PATH="$PWD/target/release:$PATH"
+# Keep the recording hermetic and repeatable: review state (viewed marks,
+# notes) lands in a throwaway dir, never the recorder's real data dir.
+export MARGIN_DATA="$(mktemp -d)/margin-demo-state"
 demo="$(mktemp -d)/aurora"
 mkdir -p "$demo/src"
 cd "$demo" || exit 1
