@@ -39,6 +39,7 @@ side-by-side is active, and `[wrap]` when line wrap is on.
 | `s` / `u` | stage / unstage the hunk under the cursor (index-only; ADR-0013). Refusals report in the status bar. Available in git worktree and `--staged` reviews. |
 | `x` | discard the hunk from the working tree (ADR-0014) — Margin's only destructive action. Opens a prompt; only typing `yes` and Enter applies it, Esc cancels. A backup patch lands in `.git/margin/trash/` first (`margin undo` restores; `discard_trash = false` opts out). Worktree reviews only. |
 | `m` | mark the cursor's file viewed: sidebar checkmark + the file folds (`za` reopens it without unmarking). Marks persist per review in the data dir (`$XDG_DATA_HOME/margin`, `$MARGIN_DATA` overrides) keyed by content digest — a changed file un-views itself, so a rebase keeps only untouched files marked. Patch/pager reviews keep marks session-only. |
+| `c` | note on the hunk under the cursor (issue #23): a one-line remark shown inline on the hunk header with a `✎` count in the sidebar. Enter saves, empty input deletes, Esc cancels; reopening an annotated hunk pre-fills the text for editing. Notes persist per review beside viewed marks, keyed by a digest of *that hunk* — an edited hunk drops its note rather than mislabeling new code. |
 | `r` | reload the diff from its source (also refreshes the sidebar's staged markers) |
 
 In worktree reviews the sidebar marks files that have staged content with a

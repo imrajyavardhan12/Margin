@@ -28,7 +28,13 @@ pub fn render(state: &AppState, frame: &mut Frame, area: Rect) {
             FileStatus::Renamed => "R",
             FileStatus::Copied => "C",
         };
-        let counts = format!(" +{} -{}", file.additions(), file.deletions());
+        // Note count rides with the +/- counts (issue #23): the sidebar
+        // is where you see which files you left remarks on.
+        let notes = match state.note_count(idx) {
+            0 => String::new(),
+            n => format!(" \u{270e}{n}"),
+        };
+        let counts = format!("{notes} +{} -{}", file.additions(), file.deletions());
         // Reserved columns for the staged dot and the viewed checkmark:
         // files stay aligned while the indicators light up in place.
         let path_room = width.saturating_sub(5 + counts.len());

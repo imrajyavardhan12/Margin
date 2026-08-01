@@ -72,7 +72,7 @@ impl ViewedStore {
 }
 
 /// `$MARGIN_DATA` (tests/scripts) → XDG data home → platform default.
-fn data_dir() -> Option<PathBuf> {
+pub fn data_dir() -> Option<PathBuf> {
     if let Ok(explicit) = std::env::var("MARGIN_DATA") {
         if !explicit.is_empty() {
             return Some(PathBuf::from(explicit));

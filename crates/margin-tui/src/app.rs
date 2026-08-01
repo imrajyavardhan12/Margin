@@ -117,6 +117,17 @@ pub struct ConfirmState {
     pub patch: Vec<u8>,
 }
 
+/// `c` note editor (issue #23): the one-line note being typed, and the
+/// hunk it belongs to. Empty input on submit deletes an existing note,
+/// which is how a note is removed without a second keybinding.
+pub struct NoteState {
+    pub input: String,
+    /// Where the note lands, and what the prompt names.
+    pub file: usize,
+    pub hunk: usize,
+    pub label: String,
+}
+
 /// Which surface receives keys; derived from state, used by the keymap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
@@ -124,6 +135,8 @@ pub enum InputMode {
     Search,
     Picker,
     Confirm,
+    /// Typing a review note (`c`).
+    Note,
     /// After `z`: the next key resolves the fold chord (`za`/`zA`).
     Fold,
 }
@@ -212,6 +225,9 @@ pub enum Command {
     /// Sources without a stable identity (pager/patch) ignore this — the
     /// marks stay session-only.
     SaveViewed { entries: Vec<(String, u64)> },
+    /// Persist review notes (issue #23): lossy path, hunk digest, text.
+    /// Like `SaveViewed`, sources without a stable identity ignore it.
+    SaveNotes { entries: Vec<(String, u64, String)> },
 }
 
 /// Outcome of a command, fed back into [`update`] as
@@ -271,6 +287,13 @@ pub enum Msg {
     ConfirmBackspace,
     ConfirmSubmit,
     ConfirmCancel,
+    /// `c`: open the note editor on the cursor's hunk (issue #23).
+    NoteStart,
+    NoteInput(char),
+    NoteBackspace,
+    /// Enter: store the note (empty input deletes it) and persist.
+    NoteSubmit,
+    NoteCancel,
     /// `r`: re-read the changeset from the source.
     Reload,
     /// `m`: toggle the cursor's file viewed (marks + folds it).
@@ -367,6 +390,8 @@ pub struct AppState {
     pub picker: Option<PickerState>,
     /// `x` typed-confirmation prompt; `Some` while awaiting the word.
     pub confirm: Option<ConfirmState>,
+    /// `c` note editor; `Some` while the one-line note is being typed.
+    pub note: Option<NoteState>,
     /// Watch mode (`-w`): the status bar shows `[watch]` and the runtime
     /// feeds debounced reloads. Set by the binary at startup.
     pub watching: bool,
@@ -378,6 +403,11 @@ pub struct AppState {
     /// un-views itself. Loaded by the binary from the per-DiffId store;
     /// every toggle emits `Command::SaveViewed`.
     viewed: std::collections::HashMap<Vec<u8>, u64>,
+    /// Review notes (issue #23), keyed by `(file index, hunk index)` for
+    /// the live session — row indices churn with layout and folding, but
+    /// these do not. Persistence keys by `(path, hunk digest)` instead,
+    /// so a note survives a reload and detaches when its hunk changes.
+    notes: std::collections::BTreeMap<(usize, usize), String>,
     /// User/repo `collapse` globs; combined with the built-in heuristics
     /// they decide the default fold for files not seen before.
     collapse_globs: Vec<String>,
@@ -407,9 +437,11 @@ impl AppState {
             search: None,
             picker: None,
             confirm: None,
+            note: None,
             watching: false,
             fold: std::collections::HashMap::new(),
             viewed: std::collections::HashMap::new(),
+            notes: std::collections::BTreeMap::new(),
             collapse_globs: Vec::new(),
             pending_z: false,
         };
@@ -516,6 +548,65 @@ impl AppState {
         Command::SaveViewed { entries }
     }
 
+    /// The note on a hunk, if any (issue #23).
+    pub fn note_for(&self, file: usize, hunk: usize) -> Option<&str> {
+        self.notes.get(&(file, hunk)).map(String::as_str)
+    }
+
+    /// How many hunks in `file` carry notes — the sidebar's count.
+    pub fn note_count(&self, file: usize) -> usize {
+        self.notes.keys().filter(|(f, _)| *f == file).count()
+    }
+
+    /// Every note, in file/hunk order, with the context an export needs:
+    /// `(file index, hunk index, note)`.
+    pub fn notes_in_order(&self) -> impl Iterator<Item = (usize, usize, &str)> {
+        self.notes
+            .iter()
+            .map(|(&(file, hunk), text)| (file, hunk, text.as_str()))
+    }
+
+    /// Adopt persisted notes (issue #23): entries are
+    /// `(path, hunk digest, text)`, and only those whose hunk still
+    /// digests the same are kept — an edited hunk drops its stale note
+    /// rather than mislabeling new code.
+    pub fn set_notes(&mut self, entries: impl IntoIterator<Item = (Vec<u8>, u64, String)>) {
+        let stored: std::collections::HashMap<(Vec<u8>, u64), String> = entries
+            .into_iter()
+            .map(|(path, digest, text)| ((path, digest), text))
+            .collect();
+        self.notes.clear();
+        for (f, file) in self.changeset.files.iter().enumerate() {
+            let Some(key) = path_key(file) else { continue };
+            for (h, hunk) in file.hunks.iter().enumerate() {
+                let digest = margin_core::hunk_digest(hunk);
+                if let Some(text) = stored.get(&(key.to_vec(), digest)) {
+                    self.notes.insert((f, h), text.clone());
+                }
+            }
+        }
+    }
+
+    /// Snapshot notes for persistence: `(lossy path, hunk digest, text)`,
+    /// sorted for a deterministic store file.
+    fn notes_snapshot(&self) -> Vec<(String, u64, String)> {
+        let mut entries: Vec<(String, u64, String)> = self
+            .notes
+            .iter()
+            .filter_map(|(&(f, h), text)| {
+                let file = self.changeset.files.get(f)?;
+                let hunk = file.hunks.get(h)?;
+                Some((
+                    file.display_path().into_owned(),
+                    margin_core::hunk_digest(hunk),
+                    text.clone(),
+                ))
+            })
+            .collect();
+        entries.sort();
+        entries
+    }
+
     /// Rebuild rows after fold changes, keeping the cursor on `file`'s
     /// header — the body it may have been in can vanish.
     fn rebuild_rows_after_fold(&mut self, file: Option<usize>) {
@@ -567,6 +658,8 @@ impl AppState {
     pub fn input_mode(&self) -> InputMode {
         if self.confirm.is_some() {
             InputMode::Confirm
+        } else if self.note.is_some() {
+            InputMode::Note
         } else if self.picker.is_some() {
             InputMode::Picker
         } else if self.search.as_ref().is_some_and(|s| s.typing) {
@@ -1067,6 +1160,62 @@ pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
         Msg::StageHunk => command = state.request_hunk_apply(HunkAction::Stage),
         Msg::UnstageHunk => command = state.request_hunk_apply(HunkAction::Unstage),
         Msg::DiscardHunk => state.request_discard(),
+        Msg::NoteStart => {
+            // Notes attach to hunks, so a cursor on a file header or a
+            // hunkless (binary/rename) body has nothing to annotate.
+            match state.rows.get(state.cursor) {
+                Some(
+                    &Row::HunkHeader { file, hunk }
+                    | &Row::Line { file, hunk, .. }
+                    | &Row::Split { file, hunk, .. },
+                ) => {
+                    let label = state
+                        .changeset
+                        .files
+                        .get(file)
+                        .map_or_else(String::new, |f| f.display_path().into_owned());
+                    state.note = Some(NoteState {
+                        input: state.notes.get(&(file, hunk)).cloned().unwrap_or_default(),
+                        file,
+                        hunk,
+                        label,
+                    });
+                }
+                _ => {
+                    state.status_message =
+                        Some("notes attach to hunks — move to a hunk first".into());
+                }
+            }
+        }
+        Msg::NoteInput(c) => {
+            if let Some(note) = &mut state.note {
+                // Same rule as the confirm prompt: the input renders on
+                // the status line, so control characters never reach the
+                // terminal (SECURITY.md).
+                if !c.is_control() {
+                    note.input.push(c);
+                }
+            }
+        }
+        Msg::NoteBackspace => {
+            if let Some(note) = &mut state.note {
+                note.input.pop();
+            }
+        }
+        Msg::NoteSubmit => {
+            if let Some(note) = state.note.take() {
+                let text = note.input.trim().to_string();
+                if text.is_empty() {
+                    state.notes.remove(&(note.file, note.hunk));
+                } else {
+                    state.notes.insert((note.file, note.hunk), text);
+                }
+                command = Some(Command::SaveNotes {
+                    entries: state.notes_snapshot(),
+                });
+            }
+        }
+        Msg::NoteCancel => state.note = None,
         Msg::ConfirmInput(c) => {
             if let Some(confirm) = &mut state.confirm {
                 // The input renders on the status line: control characters
@@ -1703,6 +1852,83 @@ mod tests {
             },
         );
         assert_eq!(state.cursor, 0);
+    }
+
+    /// Notes (issue #23) attach to hunks, survive layout switches and
+    /// scrolling, and empty input deletes.
+    #[test]
+    fn notes_attach_to_hunks_and_survive_layout() {
+        let mut state = sample();
+        update(&mut state, Msg::Resize(200, 24)); // wide: split layout
+        update(&mut state, Msg::NextHunk);
+        let Some(&Row::HunkHeader { file, hunk }) = state.rows.get(state.cursor) else {
+            panic!("expected the cursor on a hunk header");
+        };
+
+        update(&mut state, Msg::NoteStart);
+        assert_eq!(state.input_mode(), InputMode::Note, "the editor is modal");
+        for c in "needs a test".chars() {
+            update(&mut state, Msg::NoteInput(c));
+        }
+        // Control characters never reach the status line (SECURITY.md).
+        update(&mut state, Msg::NoteInput('\u{7}'));
+        let command = update(&mut state, Msg::NoteSubmit);
+        assert_eq!(state.note_for(file, hunk), Some("needs a test"));
+        assert_eq!(state.note_count(file), 1);
+        assert!(
+            matches!(command, Some(Command::SaveNotes { .. })),
+            "submitting persists"
+        );
+
+        // Layout switch and scrolling rebuild rows; the note is keyed by
+        // (file, hunk), so it rides along.
+        update(&mut state, Msg::ToggleLayout);
+        update(&mut state, Msg::Bottom);
+        update(&mut state, Msg::GKey);
+        update(&mut state, Msg::GKey);
+        assert_eq!(state.note_for(file, hunk), Some("needs a test"));
+
+        // Reopening pre-fills, and Esc leaves the stored note alone.
+        update(&mut state, Msg::NextHunk);
+        update(&mut state, Msg::NoteStart);
+        assert_eq!(
+            state.note.as_ref().map(|n| n.input.as_str()),
+            Some("needs a test"),
+            "the editor pre-fills for editing"
+        );
+        update(&mut state, Msg::NoteCancel);
+        assert_eq!(state.note_for(file, hunk), Some("needs a test"));
+
+        // Empty input deletes — no second keybinding needed.
+        update(&mut state, Msg::NoteStart);
+        for _ in 0.."needs a test".len() {
+            update(&mut state, Msg::NoteBackspace);
+        }
+        update(&mut state, Msg::NoteSubmit);
+        assert_eq!(state.note_for(file, hunk), None);
+        assert_eq!(state.note_count(file), 0);
+    }
+
+    #[test]
+    fn notes_need_a_hunk_and_reattach_by_digest() {
+        // A file header has nothing to annotate: the editor stays shut
+        // and says why.
+        let mut state = sample();
+        update(&mut state, Msg::Resize(80, 24));
+        assert!(matches!(state.rows.first(), Some(Row::FileHeader { .. })));
+        update(&mut state, Msg::NoteStart);
+        assert!(state.note.is_none(), "no editor on a file header");
+        assert!(state.status_message.is_some(), "and an honest reason");
+
+        // Persisted notes reattach only while the hunk digests the same.
+        let file = &state.changeset.files[0];
+        let path = path_key(file).unwrap_or_default().to_vec();
+        let digest = margin_core::hunk_digest(&file.hunks[1]);
+        state.set_notes([(path.clone(), digest, "still here".to_string())]);
+        assert_eq!(state.note_for(0, 1), Some("still here"));
+
+        state.set_notes([(path, digest.wrapping_add(1), "stale".to_string())]);
+        assert_eq!(state.note_for(0, 1), None, "an edited hunk drops its note");
     }
 
     #[test]

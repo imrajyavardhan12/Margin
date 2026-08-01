@@ -19,6 +19,7 @@ const KEYS: &[(&str, &str)] = &[
     ("s / u", "stage / unstage hunk"),
     ("x", "discard hunk (typed confirm)"),
     ("m", "mark file viewed (folds it)"),
+    ("c", "note on this hunk"),
     ("r", "reload the diff"),
     ("v", "toggle unified / side-by-side"),
     ("w", "toggle line wrap"),

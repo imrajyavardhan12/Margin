@@ -146,7 +146,20 @@ fn hunk_header(state: &AppState, file: usize, hunk: usize, marker: &str) -> TLin
         text.push(' ');
         text.push_str(&printable(heading));
     }
-    TLine::styled(text, state.theme.hunk_header)
+    // A note rides on its hunk header (issue #23) so it survives layout
+    // switches and folding without inventing a Row variant — the wrap
+    // contract in AGENTS.md stays untouched. The full text lives in the
+    // Markdown export; long notes clip here.
+    let Some(note) = state.note_for(file, hunk) else {
+        return TLine::styled(text, state.theme.hunk_header);
+    };
+    TLine::from(vec![
+        Span::styled(text, state.theme.hunk_header),
+        Span::styled(
+            format!("  \u{270e} {}", printable(note.as_bytes())),
+            state.theme.meta,
+        ),
+    ])
 }
 
 /// Sign char, base style, and emphasis patch for a line kind. The base is

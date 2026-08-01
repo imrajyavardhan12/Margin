@@ -13,6 +13,7 @@
 //! (1 is reserved for "displayed with errors".)
 
 mod config;
+mod notes;
 mod viewed;
 
 use std::io::{IsTerminal, Read, Write};
@@ -461,12 +462,14 @@ fn run_patch(input: &str, session: &Session) -> ExitCode {
         worktree: false,
         trash: false,
         viewed: None,
+        notes: None,
     };
     let code = show(
         outcome.changeset,
         session,
         None,
         None,
+        Vec::new(),
         Vec::new(),
         &mut executor,
     );
@@ -487,6 +490,9 @@ struct VcsExecutor<'a> {
     source: Option<&'a dyn DiffSource>,
     worktree: bool,
     trash: bool,
+    /// Persistence for review notes (issue #23); `None` keeps them
+    /// session-only, exactly like viewed marks.
+    notes: Option<notes::NotesStore>,
     /// Persistence for viewed marks; `None` (pager/patch) keeps them
     /// session-only and guarantees no data is written (issue #20).
     viewed: Option<viewed::ViewedStore>,
@@ -577,6 +583,13 @@ impl margin_tui::CommandExecutor for VcsExecutor<'_> {
                 }
                 CommandResult::Done
             }
+            margin_tui::Command::SaveNotes { entries } => {
+                // Session-only fallback by design, like SaveViewed.
+                if let Some(store) = &self.notes {
+                    let _ = store.save(&entries);
+                }
+                CommandResult::Done
+            }
             margin_tui::Command::Reload => {
                 let Some(source) = self.source else {
                     return CommandResult::Unsupported("cannot reload patch or piped input");
@@ -624,6 +637,11 @@ fn run_source(source: &dyn DiffSource, session: &Session, ctx: ReviewCtx) -> Exi
                 .as_ref()
                 .map(viewed::ViewedStore::load)
                 .unwrap_or_default();
+            let notes_store = notes::NotesStore::open(source.id().0);
+            let note_entries = notes_store
+                .as_ref()
+                .map(notes::NotesStore::load)
+                .unwrap_or_default();
             // Watch mode: OS events feed the debounce handle; the event
             // loop turns quiescence into the same reload `r` performs.
             // The watcher must stay alive for the whole session — dropping
@@ -648,6 +666,7 @@ fn run_source(source: &dyn DiffSource, session: &Session, ctx: ReviewCtx) -> Exi
                 worktree,
                 trash: session.config.discard_trash,
                 viewed: viewed_store,
+                notes: notes_store,
             };
             let staged = executor.staged_summary();
             show(
@@ -656,6 +675,7 @@ fn run_source(source: &dyn DiffSource, session: &Session, ctx: ReviewCtx) -> Exi
                 staged,
                 watch_handle.as_deref(),
                 viewed_entries,
+                note_entries,
                 &mut executor,
             )
         }
@@ -733,6 +753,7 @@ fn show(
     staged: Option<margin_tui::StagedFiles>,
     watch: Option<&margin_tui::WatchHandle>,
     viewed: Vec<(Vec<u8>, u64)>,
+    review_notes: Vec<(Vec<u8>, u64, String)>,
     executor: &mut dyn margin_tui::CommandExecutor,
 ) -> ExitCode {
     // JSON beats both the TUI and the piped summary: the caller asked
@@ -758,6 +779,7 @@ fn show(
     state.set_layout_mode(session.config.layout.into());
     state.set_collapse_globs(session.config.collapse.clone());
     state.set_viewed(viewed);
+    state.set_notes(review_notes);
     state.staged = staged;
     state.watching = watch.is_some();
     match margin_tui::run(&mut state, executor, watch, session.config.mouse) {

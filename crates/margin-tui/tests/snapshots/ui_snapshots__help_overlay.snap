@@ -16,13 +16,13 @@ expression: "render(&mut state, 80, 24)"
                   │  s / u            stage / unstage hunk   │
                   │  x                discard hunk (typed con│
                   │  m                mark file viewed (folds│
+                  │  c                note on this hunk      │
                   │  r                reload the diff        │
                   │  v                toggle unified / side-b│
                   │  w                toggle line wrap       │
                   │  za / zA          collapse file / all fil│
                   │  b                toggle sidebar         │
-                  │  wheel / click    scroll / move cursor   │
-                  │  ?                toggle this help       │hown
+                  │  wheel / click    scroll / move cursor   │hown
                   │                                          │0
                   └──────────────────────────────────────────┘nges
  src/app.rs  1/23

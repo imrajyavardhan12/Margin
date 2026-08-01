@@ -856,3 +856,31 @@ fn reload_requests_and_absorbs() {
     let mut empty = AppState::new(margin_core::Changeset::default());
     assert_eq!(update(&mut empty, Msg::Reload), Some(Command::Reload));
 }
+
+/// AC (issue #23): a note is visible in the frame — inline on its hunk
+/// header, counted in the sidebar.
+#[test]
+fn hunk_with_a_review_note() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::NoteStart);
+    for c in "why unwrap here?".chars() {
+        update(&mut state, Msg::NoteInput(c));
+    }
+    update(&mut state, Msg::NoteSubmit);
+    assert_snapshot!(render(&mut state, 80, 24));
+}
+
+/// The note editor owns the status line while open.
+#[test]
+fn note_editor_prompt() {
+    let mut state = sample_state();
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::NoteStart);
+    for c in "needs a test".chars() {
+        update(&mut state, Msg::NoteInput(c));
+    }
+    assert_snapshot!(render(&mut state, 80, 24));
+}
