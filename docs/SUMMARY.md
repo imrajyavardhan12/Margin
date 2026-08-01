@@ -34,4 +34,3 @@
 ---
 
 [Changelog](CHANGELOG.md)
-[Contributing](CONTRIBUTING.md)

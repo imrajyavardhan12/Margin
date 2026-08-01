@@ -58,7 +58,9 @@ jobs:
           for page in root.rglob("*.html"):
               html = page.read_text(encoding="utf-8", errors="replace")
               for ref in re.findall(r'(?:href|src)="([^"#?]+)"', html):
-                  if ref.startswith(("http", "data:", "mailto:", "//")):
+                  # "/..." is resolved by the web server at deploy time, not
+                  # by this filesystem walk (mdBook emits it in 404.html).
+                  if ref.startswith(("http", "data:", "mailto:", "//", "/")):
                       continue
                   target = (page.parent / ref).resolve()
                   if target.is_dir():

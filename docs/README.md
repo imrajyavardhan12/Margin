@@ -16,8 +16,8 @@ margin            # review the working tree
 | change themes, layout, or behaviour | [Configuration](configuration.md) · [Themes](themes.md) |
 | script Margin or feed an agent | [JSON output](json-output.md) |
 | understand how it is built | [Architecture](architecture.md) |
-| know *why* it is built that way | [Decision records](adr/README.md) |
-| contribute | [Contributing](CONTRIBUTING.md) |
+| know *why* it is built that way | [Decision records](adr/) |
+| contribute | [Contributing](https://github.com/imrajyavardhan12/Margin/blob/main/CONTRIBUTING.md) |
 
 ## The review loop
 
