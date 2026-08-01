@@ -7,6 +7,15 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- Custom themes (issue #15): a `[themes.<name>]` section in the user
+  config inherits a built-in `base` and overrides individual `#rrggbb`
+  colors and/or the `syntax_theme`; `theme = "<name>"` selects it, and
+  naming one after a built-in tweaks what `auto` picks. Unknown keys
+  and malformed colors are config errors naming the key. Repo-local
+  `.margin.toml` cannot define themes (a hostile repo could restyle
+  additions into invisibility). Degraded modes (16-color, `NO_COLOR`)
+  still apply unchanged. Schema documented in docs/themes.md.
+
 - `margin completions <bash|zsh|fish|powershell>` prints shell
   completions, and the hidden `margin man` prints the roff man page
   (issue #16, ADR-0016) — generated at runtime from the installed

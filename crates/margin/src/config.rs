@@ -10,11 +10,12 @@
 //! repository must never be able to change Margin's behavior. Unknown keys
 //! in either file are errors with did-you-mean suggestions (serde).
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use clap::ValueEnum;
 use margin_tui::app::LayoutMode;
-use margin_tui::theme::ColorMode;
+use margin_tui::theme::{ColorMode, CustomTheme};
 use serde::Deserialize;
 
 /// Layout choice shared by config files and the `--layout` flag.
@@ -50,6 +51,12 @@ struct UserFile {
     /// Globs of paths to auto-collapse (issue #21), on top of the
     /// built-in generated-file heuristics.
     collapse: Option<Vec<String>>,
+    /// Custom themes (issue #15): `[themes.<name>]`, a built-in base
+    /// plus `#rrggbb` overrides. Deliberately absent from [`RepoFile`]:
+    /// a checked-out repository restyling the diff could hide additions
+    /// outright (addition ink = background), so theme *definitions* are
+    /// user-trust only — the repo may still *select* by name.
+    themes: Option<BTreeMap<String, CustomTheme>>,
 }
 
 /// The repo-local `.margin.toml`: display options only, by schema (ADR-0008).
@@ -71,6 +78,7 @@ pub struct Config {
     pub include_untracked: bool,
     pub discard_trash: bool,
     pub collapse: Vec<String>,
+    pub themes: BTreeMap<String, CustomTheme>,
 }
 
 impl Default for Config {
@@ -81,6 +89,7 @@ impl Default for Config {
             include_untracked: true,
             discard_trash: true,
             collapse: Vec::new(),
+            themes: BTreeMap::new(),
         }
     }
 }
@@ -106,6 +115,7 @@ impl Config {
                 merge_opt(&mut config.include_untracked, user.include_untracked);
                 merge_opt(&mut config.discard_trash, user.discard_trash);
                 merge_opt(&mut config.collapse, user.collapse);
+                merge_opt(&mut config.themes, user.themes);
             }
         }
         if let Some(dir) = repo_dir {
@@ -141,10 +151,15 @@ impl Config {
             .map(|g| format!("\"{g}\""))
             .collect::<Vec<_>>()
             .join(", ");
-        format!(
+        let mut dump = format!(
             "theme = \"{}\"\nlayout = \"{}\"\ninclude_untracked = {}\ndiscard_trash = {}\ncollapse = [{collapse}]\n",
             self.theme, layout, self.include_untracked, self.discard_trash
-        )
+        );
+        if !self.themes.is_empty() {
+            let names: Vec<&str> = self.themes.keys().map(String::as_str).collect();
+            dump.push_str(&format!("# custom themes defined: {}\n", names.join(", ")));
+        }
+        dump
     }
 }
 
@@ -320,6 +335,49 @@ mod tests {
         let config = Config::load(Some(&user), None, None, None, false).unwrap();
         assert!(!config.discard_trash);
         assert!(Config::default().discard_trash, "backups default on");
+    }
+
+    #[test]
+    fn custom_themes_parse_from_the_user_file_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let user = dir.path().join("config.toml");
+        std::fs::write(
+            &user,
+            "theme = \"mocha\"\n[themes.mocha]\nbase = \"carbon\"\naddition = \"#12fe56\"\n",
+        )
+        .unwrap();
+        let config = Config::load(Some(&user), None, None, None, false).unwrap();
+        assert_eq!(config.theme, "mocha");
+        let mocha = config.themes.get("mocha").unwrap();
+        assert_eq!(mocha.base, "carbon");
+        assert_eq!(mocha.addition.as_deref(), Some("#12fe56"));
+        assert!(
+            config.dump().contains("# custom themes defined: mocha"),
+            "{}",
+            config.dump()
+        );
+
+        // Unknown keys inside a theme section error with the key named
+        // (ADR-0008), same as top-level typos.
+        std::fs::write(
+            &user,
+            "[themes.mocha]\nbase = \"carbon\"\nadditional = \"#12fe56\"\n",
+        )
+        .unwrap();
+        let err = Config::load(Some(&user), None, None, None, false).unwrap_err();
+        assert!(err.contains("additional"), "{err}");
+
+        // ADR-0008 trust rule: a repo config must not define themes — a
+        // hostile repo restyling additions could hide injected code.
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(
+            repo.join(".margin.toml"),
+            "[themes.evil]\nbase = \"ledger\"\n",
+        )
+        .unwrap();
+        let err = Config::load(None, Some(&repo), None, None, false).unwrap_err();
+        assert!(err.contains("themes"), "{err}");
     }
 
     #[test]

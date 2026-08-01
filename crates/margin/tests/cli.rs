@@ -250,6 +250,72 @@ fn auto_theme_is_the_default_and_piped_runs_fall_back() {
     );
 }
 
+/// Custom themes end to end (issue #15): a `[themes.<name>]` from the
+/// user config is selectable, renders a run to completion, and a bad
+/// color value is a config error naming the key — before any TUI opens.
+#[test]
+fn custom_theme_selects_and_bad_colors_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = dir.path().join("config.toml");
+    std::fs::write(
+        &user,
+        "theme = \"mocha\"\n[themes.mocha]\nbase = \"carbon\"\naddition = \"#12fe56\"\n",
+    )
+    .unwrap();
+
+    let patch = b"--- a\n+++ b\n@@ -1,1 +1,1 @@\n-x\n+y\n";
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &user)
+        .args(["patch", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map(|mut child| {
+            child.stdin.take().unwrap().write_all(patch).unwrap();
+            child.wait_with_output().unwrap()
+        })
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    std::fs::write(
+        &user,
+        "theme = \"mocha\"\n[themes.mocha]\nbase = \"carbon\"\naddition = \"green\"\n",
+    )
+    .unwrap();
+    let out = run_with_stdin_env(&["patch", "-"], patch, &user);
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("themes.mocha.addition") && stderr.contains("#rrggbb"),
+        "{stderr}"
+    );
+}
+
+fn run_with_stdin_env(args: &[&str], stdin_bytes: &[u8], config: &std::path::Path) -> Output {
+    let mut child = margin()
+        .args(args)
+        .env("MARGIN_CONFIG", config)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn margin");
+    child
+        .stdin
+        .take()
+        .expect("stdin handle")
+        .write_all(stdin_bytes)
+        .expect("write stdin");
+    child.wait_with_output().expect("wait for margin")
+}
+
 #[test]
 fn config_typos_error_with_suggestions() {
     let dir = tempfile::tempdir().unwrap();

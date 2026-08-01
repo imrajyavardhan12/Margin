@@ -87,13 +87,19 @@ struct HunkCache {
 
 impl Default for HighlightCache {
     fn default() -> Self {
-        Self::new(crate::theme::Theme::default().syntax_theme)
+        Self::new(crate::theme::Theme::default().syntax_theme.as_deref())
     }
+}
+
+/// Names in the bundled syntect theme set, sorted — the valid values of
+/// a custom theme's `syntax_theme` key (issue #15 validation).
+pub fn syntax_theme_names() -> Vec<&'static str> {
+    theme_set().themes.keys().map(String::as_str).collect()
 }
 
 impl HighlightCache {
     /// A cache coloring with the named syntect theme; `None` renders plain.
-    pub fn new(syntax_theme: Option<&'static str>) -> Self {
+    pub fn new(syntax_theme: Option<&str>) -> Self {
         Self {
             syn_theme: syntax_theme.and_then(|name| theme_set().themes.get(name)),
             state: RefCell::new(CacheState::default()),

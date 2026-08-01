@@ -115,3 +115,31 @@ fn staged_indicator_wears_the_staged_style() {
         });
     assert!(marked, "the staged dot must be painted in sidebar_staged");
 }
+
+/// AC (issue #15): a custom theme parses, inherits, and *renders* — the
+/// overridden addition ink and tint reach real cells, and everything not
+/// overridden still carries the base (carbon) fingerprint.
+#[test]
+fn custom_theme_renders_its_overrides() {
+    let custom = margin_tui::theme::CustomTheme {
+        base: "carbon".into(),
+        addition: Some("#12fe56".into()),
+        addition_tint: Some("#101137".into()),
+        ..Default::default()
+    };
+    let theme = custom
+        .build("mocha", ColorMode::TrueColor)
+        .unwrap_or_else(|err| panic!("{err}"));
+    let base = Theme::resolve("carbon", ColorMode::TrueColor).unwrap();
+    let styles = rendered_styles(theme);
+    assert!(
+        styles
+            .iter()
+            .any(|s| s.bg == Some(Color::Rgb(0x10, 0x11, 0x37))),
+        "the overridden addition tint must appear on the added line"
+    );
+    assert!(
+        styles.iter().any(|s| s.bg == base.cursor_line.bg),
+        "unset keys must still render the base's colors"
+    );
+}

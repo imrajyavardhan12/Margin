@@ -132,6 +132,11 @@ Dependency rule (compiler-enforced, do not work around):
   is a stop sign.
 - **`gh run list --limit 1` races pushes**: select CI runs by
   `--workflow ci.yml --commit $(git rev-parse HEAD)` after a short sleep.
+- **`script(1)` pty smokes render nothing without a window size**: on
+  macOS the allocated pty is 0×0, the TUI enters and exits the alt
+  screen without painting a single cell, and exit 0 "proves" nothing.
+  Wrap the binary: `script -q /dev/null sh -c "stty rows 24 cols 80;
+  ./target/debug/margin ..."`, then assert on emitted SGR sequences.
 - Windows CI is real: key handling filters `KeyEventKind::Press` (Windows
   sends Release too), and autocrlf corrupts anything not guarded by
   `.gitattributes`. Temp-repo tests that write the **worktree** through
