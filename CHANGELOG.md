@@ -3,7 +3,10 @@
 All notable changes to Margin. Generated from Conventional Commits by git-cliff;
 release notes are hand-curated on top in GitHub Releases.
 
-## [Unreleased]
+## [0.4.0] - 2026-08-01
+
+Make it yours: custom themes, mouse support, shell completions, and
+runnable examples.
 
 ### Added
 
@@ -28,6 +31,11 @@ release notes are hand-curated on top in GitHub Releases.
   (issue #16, ADR-0016) — generated at runtime from the installed
   binary, so they can never drift from your version. Both work even
   with a broken config file, so an `eval` in a shell rc is safe.
+
+- An `examples/` directory of runnable demo patches (issue #17):
+  syntax + intraline, rename + mode change, binary files, format-patch
+  mail, unicode paths — try Margin with no repository at hand. CI
+  asserts every example opens with zero parse warnings.
 
 ## [0.3.0] - 2026-07-30
 
