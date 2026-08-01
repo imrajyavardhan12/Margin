@@ -19,7 +19,7 @@ use std::io::{IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use config::{Config, LayoutChoice};
 use margin_core::{parse_unified, Changeset, FileStatus, ParseWarning};
 use margin_tui::theme::{Theme, THEME_NAMES};
@@ -105,6 +105,17 @@ enum Command {
     Pager,
     /// Restore the most recent discarded hunk from the trash (ADR-0014)
     Undo,
+    /// Print shell completions to stdout (ADR-0016) — e.g.
+    /// `margin completions zsh > "$fpath[1]/_margin"`
+    Completions {
+        /// Shell dialect to emit
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Print the roff man page to stdout (`margin man | man -l -`) —
+    /// for packagers; regular users read `--help` (ADR-0016)
+    #[command(hide = true)]
+    Man,
 }
 
 #[derive(Args)]
@@ -137,6 +148,21 @@ struct Session {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    // Completions and the man page dispatch before config: completions
+    // are eval'd from shell rc files, and a typo in config.toml must
+    // never break shell startup (ADR-0016).
+    match cli.command {
+        Some(Command::Completions { shell }) => {
+            // Render to a buffer first: clap_complete panics on a write
+            // error, and `margin completions zsh | head` must not panic.
+            let mut script = Vec::new();
+            clap_complete::generate(shell, &mut Cli::command(), "margin", &mut script);
+            return write_stdout(&script);
+        }
+        Some(Command::Man) => return run_man(),
+        _ => {}
+    }
 
     let cwd = working_dir().ok();
     let config = match Config::load(
@@ -185,7 +211,7 @@ fn main() -> ExitCode {
         Command::Show { json, .. } | Command::Patch { json, .. } | Command::Pr { json, .. } => {
             cli.json || *json
         }
-        Command::Pager | Command::Undo => false,
+        Command::Pager | Command::Undo | Command::Completions { .. } | Command::Man => false,
     };
     let session = Session {
         config,
@@ -222,6 +248,32 @@ fn main() -> ExitCode {
         }
         Command::Pager => run_patch("-", &session),
         Command::Undo => run_undo(),
+        Command::Completions { .. } | Command::Man => {
+            unreachable!("dispatched before config load")
+        }
+    }
+}
+
+/// `margin man`: the roff page to stdout, for packagers (ADR-0016).
+fn run_man() -> ExitCode {
+    let mut page = Vec::new();
+    if let Err(err) = clap_mangen::Man::new(Cli::command()).render(&mut page) {
+        eprintln!("margin: cannot render man page: {err}");
+        return ExitCode::from(2);
+    }
+    write_stdout(&page)
+}
+
+/// Write generated text to stdout. A closed pipe (`| head`, a pager
+/// quitting) is normal use, not an error; anything else is exit 2.
+fn write_stdout(bytes: &[u8]) -> ExitCode {
+    match std::io::stdout().write_all(bytes) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("margin: {err}");
+            ExitCode::from(2)
+        }
     }
 }
 

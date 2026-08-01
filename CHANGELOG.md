@@ -3,6 +3,16 @@
 All notable changes to Margin. Generated from Conventional Commits by git-cliff;
 release notes are hand-curated on top in GitHub Releases.
 
+## [Unreleased]
+
+### Added
+
+- `margin completions <bash|zsh|fish|powershell>` prints shell
+  completions, and the hidden `margin man` prints the roff man page
+  (issue #16, ADR-0016) — generated at runtime from the installed
+  binary, so they can never drift from your version. Both work even
+  with a broken config file, so an `eval` in a shell rc is safe.
+
 ## [0.3.0] - 2026-07-30
 
 Pull-request review, review persistence, and a terminal-aware default

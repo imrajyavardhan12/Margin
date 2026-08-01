@@ -55,6 +55,19 @@ Windows (PowerShell):
 irm https://github.com/imrajyavardhan12/Margin/releases/latest/download/margin-installer.ps1 | iex
 ```
 
+### Shell completions & man page
+
+The installed binary generates both, so they always match your version:
+
+```bash
+margin completions zsh > "${fpath[1]}/_margin"      # zsh (then: autoload -U compinit && compinit)
+margin completions bash > ~/.local/share/bash-completion/completions/margin
+margin completions fish > ~/.config/fish/completions/margin.fish
+margin completions powershell | Out-String | Invoke-Expression   # PowerShell ($PROFILE)
+
+margin man > /usr/local/share/man/man1/margin.1     # man page (or: margin man | man -l -)
+```
+
 ## Quick start
 
 ```bash
