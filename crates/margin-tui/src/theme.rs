@@ -127,16 +127,13 @@ pub struct CustomTheme {
 
 impl CustomTheme {
     /// Materialize under a color mode. `name` is the `[themes.<name>]`
-    /// key, used only in error messages. TrueColor applies the
-    /// overrides; degraded modes return the shared degraded palettes
-    /// untouched — custom RGB in a 16-color terminal would render as
-    /// garbage, exactly the accidental degradation ADR-0008 forbids.
+    /// key, used only in error messages. Every key is validated in every
+    /// mode — a config error must not depend on which terminal you
+    /// happen to be in (ADR-0008: loud, immediate). Only *after* that do
+    /// degraded modes return the shared degraded palettes untouched —
+    /// custom RGB in a 16-color terminal would render as garbage,
+    /// exactly the accidental degradation ADR-0008 forbids.
     pub fn build(&self, name: &str, mode: ColorMode) -> Result<Theme, String> {
-        match mode {
-            ColorMode::Ansi16 => return Ok(ansi16()),
-            ColorMode::Monochrome => return Ok(monochrome()),
-            ColorMode::TrueColor => {}
-        }
         let Some(mut theme) = Theme::resolve(&self.base, ColorMode::TrueColor) else {
             return Err(format!(
                 "themes.{name}.base: '{}' is not a built-in theme ({})",
@@ -203,7 +200,11 @@ impl CustomTheme {
             }
             theme.syntax_theme = Some(syntax.clone());
         }
-        Ok(theme)
+        Ok(match mode {
+            ColorMode::TrueColor => theme,
+            ColorMode::Ansi16 => ansi16(),
+            ColorMode::Monochrome => monochrome(),
+        })
     }
 }
 
@@ -497,6 +498,18 @@ mod tests {
             Err(err) => panic!("{err}"),
         };
         assert_eq!(mono.addition.fg, None);
+
+        // Validation is mode-independent: a bad color errors on a
+        // 16-color terminal too, not first on some future truecolor one.
+        // (Shipped-and-caught: CI has no truecolor, so an early degraded
+        // return skipped validation and the bad-color test exited 0.)
+        let bad = CustomTheme {
+            base: "ledger".into(),
+            addition: Some("green".into()),
+            ..CustomTheme::default()
+        };
+        assert!(bad.build("x", ColorMode::Ansi16).is_err());
+        assert!(bad.build("x", ColorMode::Monochrome).is_err());
     }
 
     #[test]
