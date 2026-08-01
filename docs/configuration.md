@@ -30,6 +30,8 @@ theme = "auto"             # auto | ledger | foolscap | carbon | blueprint
 layout = "auto"            # auto | unified | split
 include_untracked = true   # show untracked files in `margin` / `margin diff`
                            # (`--no-untracked` overrides per invocation)
+mouse = true               # wheel scroll + click in the TUI; false keeps the
+                           # terminal's own text selection (`--no-mouse` too)
 discard_trash = true       # back up discarded hunks to .git/margin/trash/
                            # before applying (ADR-0014); `margin undo` restores
 collapse = []              # globs to auto-collapse (za expands), on top of

@@ -21,8 +21,8 @@ expression: "render(&mut state, 80, 24)"
                   │  w                toggle line wrap       │
                   │  za / zA          collapse file / all fil│
                   │  b                toggle sidebar         │
-                  │  ?                toggle this help       │
-                  │  q                quit                   │hown
+                  │  wheel / click    scroll / move cursor   │
+                  │  ?                toggle this help       │hown
                   │                                          │0
                   └──────────────────────────────────────────┘nges
  src/app.rs  1/23

@@ -7,6 +7,13 @@ release notes are hand-curated on top in GitHub Releases.
 
 ### Added
 
+- Mouse support (issue #26): the wheel scrolls, a left click places the
+  cursor on the clicked row, a click in the sidebar jumps to that file,
+  and a click closes the help overlay. Strictly additive — the keyboard
+  stays primary, overlays keep their keyboard grammar, and
+  `mouse = false` in config (or `--no-mouse`) opts out entirely,
+  keeping the terminal's own text selection.
+
 - Custom themes (issue #15): a `[themes.<name>]` section in the user
   config inherits a built-in `base` and overrides individual `#rrggbb`
   colors and/or the `syntax_theme`; `theme = "<name>"` selects it, and

@@ -24,6 +24,7 @@ const KEYS: &[(&str, &str)] = &[
     ("w", "toggle line wrap"),
     ("za / zA", "collapse file / all files"),
     ("b", "toggle sidebar"),
+    ("wheel / click", "scroll / move cursor"),
     ("?", "toggle this help"),
     ("q", "quit"),
 ];

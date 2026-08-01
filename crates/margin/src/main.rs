@@ -66,6 +66,10 @@ struct Cli {
     #[arg(long, global = true)]
     no_untracked: bool,
 
+    /// Disable mouse capture (keeps the terminal's own text selection)
+    #[arg(long, global = true)]
+    no_mouse: bool,
+
     /// Print the effective configuration (after merging files and flags)
     #[arg(long)]
     dump_config: bool,
@@ -171,6 +175,7 @@ fn main() -> ExitCode {
         cli.theme.as_deref(),
         cli.layout,
         cli.no_untracked,
+        cli.no_mouse,
     ) {
         Ok(config) => config,
         Err(message) => {
@@ -755,7 +760,7 @@ fn show(
     state.set_viewed(viewed);
     state.staged = staged;
     state.watching = watch.is_some();
-    match margin_tui::run(&mut state, executor, watch) {
+    match margin_tui::run(&mut state, executor, watch, session.config.mouse) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("margin: terminal error: {err}");
