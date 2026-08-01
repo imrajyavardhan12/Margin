@@ -10,11 +10,15 @@ blinking.
 <!-- Regenerate: cargo build --release -p margin && vhs assets/demo.tape -->
 ![margin demo](assets/demo.gif)
 
-> **Status: alpha.** The reviewer works today — unified and side-by-side
-> layouts, syntax highlighting with word-level emphasis, incremental regex
-> search, fuzzy file jump, line wrap, four themes, and a git-verb CLI with a
-> byte-identical pager mode. Staging, discard, and watch mode land in v0.2
-> (see [docs/adr/](docs/adr/) for the plan). Watch the repo or grab an issue.
+*Read the diff, stage the good part, leave a note on the rest, check the
+file off — then hand the notes back as Markdown.*
+
+> **Status: v0.5.0.** Everything above works today. The review loop
+> (stage/unstage/discard by hunk, mark viewed, review notes), GitHub PR
+> review through your own `gh`, watch mode, JSON output, four themes plus
+> custom ones, and a byte-identical pager mode. Rough edges and missing
+> integrations are [open issues](https://github.com/imrajyavardhan12/Margin/issues) —
+> `jj` support is up for grabs.
 
 ## Why margin
 
@@ -23,9 +27,15 @@ blinking.
   criterion — budgets enforced in CI). Syntax highlighting is budgeted per
   frame, so no diff can ever freeze the UI.
 - **Keyboard-first.** Vim-grammar navigation, `/` search across the whole
-  changeset, fuzzy file jump, mark-as-viewed. Review without touching the mouse.
-- **Acts on the diff** *(v0.2)*. Stage, unstage, or discard hunk-by-hunk from
-  inside the review — accept/reject an agent's edits without switching tools.
+  changeset, fuzzy file jump. Review without touching the mouse — though the
+  mouse works too if you want it.
+- **Acts on the diff.** Stage, unstage, or discard hunk-by-hunk from inside
+  the review — accept or reject an agent's edits without switching tools.
+- **Built for the agent loop.** Mark files viewed and they stay marked across
+  rebases and force-pushes (content digests, not line numbers). Annotate a
+  hunk with `c`, then `margin --notes` prints every remark as Markdown with
+  `path:line` anchors — paste it into a PR, or hand it straight back to the
+  agent that wrote the code.
 - **A good terminal citizen.** Safe as `core.pager` (byte-identical
   passthrough when piped), `NO_COLOR`, 16-color fallback, tmux/ssh-clean,
   works on macOS, Linux, and Windows.
@@ -98,7 +108,9 @@ git config --global core.pager "margin pager"
 | `j` / `k` | line | `/` `n` `N` | search / next / prev |
 | `J` / `K` | hunk | `f` | fuzzy file picker |
 | `]` / `[` | file | `w` | wrap long lines |
-| `v` | unified ⇄ side-by-side | `m`, `za` | viewed / collapse 🔜 |
+| `v` | unified ⇄ side-by-side | `m`, `za` | viewed / collapse |
+| `s` / `u` | stage / unstage hunk | `x` | discard hunk (typed confirm) |
+| `c` | note on this hunk | `r` | reload |
 | `b` | sidebar | `?` | help |
 
 Full reference: [docs/keybindings.md](docs/keybindings.md).
@@ -108,8 +120,9 @@ Full reference: [docs/keybindings.md](docs/keybindings.md).
 | | margin | [Hunk](https://github.com/modem-dev/hunk) | [delta](https://github.com/dandavison/delta) | [difftastic](https://github.com/Wilfred/difftastic) | [gitui](https://github.com/gitui-org/gitui) |
 |---|---|---|---|---|---|
 | Interactive review UI (sidebar, viewed-state) | ✅ | ✅ | ❌ | ❌ | partial |
-| Stage / unstage / discard hunks in-review | 🔜 v0.2 | ❌ | ❌ | ❌ | ✅ |
+| Stage / unstage / discard hunks in-review | ✅ | ❌ | ❌ | ❌ | ✅ |
 | Search across the changeset | ✅ | ❌ | via less | ❌ | ❌ |
+| Review notes, exported as Markdown | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Single static binary, no runtime | ✅ | ❌ (Node) | ✅ | ✅ | ✅ |
 | Safe `core.pager` passthrough | ✅ | ✅ | ✅ | ✅ | n/a |
 | Structural (AST) diff | ❌ | ❌ | ❌ | ✅ | ❌ |
@@ -127,7 +140,8 @@ result. See [docs/configuration.md](docs/configuration.md) and
 [docs/themes.md](docs/themes.md).
 
 ```toml
-theme = "ledger"           # ledger, foolscap, carbon, blueprint
+theme = "auto"             # auto (match terminal background), ledger,
+                           # foolscap, carbon, blueprint, or your own
 layout = "auto"            # auto, unified, split
 include_untracked = true
 ```

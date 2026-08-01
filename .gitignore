@@ -4,3 +4,6 @@
 /fuzz/artifacts
 *.profraw
 .DS_Store
+
+# vhs verification stills from assets/demo.tape (the GIF is committed)
+/assets/frames

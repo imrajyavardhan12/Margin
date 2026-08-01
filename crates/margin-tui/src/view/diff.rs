@@ -157,7 +157,7 @@ fn hunk_header(state: &AppState, file: usize, hunk: usize, marker: &str) -> TLin
         Span::styled(text, state.theme.hunk_header),
         Span::styled(
             format!("  \u{270e} {}", printable(note.as_bytes())),
-            state.theme.meta,
+            state.theme.note,
         ),
     ])
 }
@@ -232,7 +232,7 @@ fn composed_line_spans(
     if l.no_newline {
         spans.push(Span::styled(
             super::NO_NEWLINE_SUFFIX.to_string(),
-            state.theme.meta,
+            state.theme.note,
         ));
     }
     Some((spans, sign, base))

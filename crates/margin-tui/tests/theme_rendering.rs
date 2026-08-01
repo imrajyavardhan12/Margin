@@ -143,3 +143,57 @@ fn custom_theme_renders_its_overrides() {
         "unset keys must still render the base's colors"
     );
 }
+
+/// A note must be *readable* where you are most likely to be looking at
+/// it: on the cursor line, right after typing it. Regression guard for
+/// the shipped v0.5.0 bug where the note used `meta`, whose dim grey is
+/// the cursor line's background grey in several themes — invisible, and
+/// invisible to symbol snapshots too, which is why this asserts styles.
+#[test]
+fn a_note_under_the_cursor_is_never_invisible() {
+    for name in THEME_NAMES {
+        for mode in [ColorMode::TrueColor, ColorMode::Ansi16] {
+            let theme = Theme::resolve(name, mode).unwrap();
+            let mut state = AppState::new(parse_unified(SAMPLE.as_bytes()).changeset);
+            state.apply_theme(theme);
+            update(&mut state, Msg::Resize(100, 24));
+            update(&mut state, Msg::NextHunk);
+            update(&mut state, Msg::NoteStart);
+            for c in "NOTEWORD".chars() {
+                update(&mut state, Msg::NoteInput(c));
+            }
+            update(&mut state, Msg::NoteSubmit);
+
+            let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+            terminal.draw(|f| render_view(&state, f)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+            let area = buffer.area();
+            let mut checked = 0;
+            for y in 0..area.height {
+                let line: String = (0..area.width).map(|x| buffer[(x, y)].symbol()).collect();
+                // Column, not byte offset: the row contains multi-byte
+                // glyphs (the cursor bar and the note's pencil).
+                let Some(byte) = line.find("NOTEWORD") else {
+                    continue;
+                };
+                let col = u16::try_from(line[..byte].chars().count()).unwrap();
+                // The row also has to be the cursor row for this to be
+                // the case we care about.
+                assert!(line.contains('\u{258c}'), "{name}/{mode:?}: {line}");
+                for offset in 0..8u16 {
+                    let cell = &buffer[(col + offset, y)];
+                    let style = cell.style();
+                    assert_eq!(cell.symbol().len(), 1, "{name}: expected note text");
+                    assert_ne!(
+                        style.fg,
+                        style.bg,
+                        "{name}/{mode:?}: note glyph {:?} is invisible on the cursor line",
+                        cell.symbol()
+                    );
+                    checked += 1;
+                }
+            }
+            assert!(checked > 0, "{name}/{mode:?}: the note never rendered");
+        }
+    }
+}
