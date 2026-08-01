@@ -6,7 +6,7 @@ use std::io;
 use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
 
-use crossterm::event::{Event, KeyEventKind};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -14,7 +14,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use crate::app::{update, AppState, CommandExecutor, Msg};
-use crate::keymap::msg_for_key;
+use crate::keymap::{msg_for_key, msg_for_mouse};
 use crate::view::view;
 
 /// Debounced "the world changed" signal for watch mode (issue #12).
@@ -90,10 +90,16 @@ pub fn run(
     state: &mut AppState,
     executor: &mut dyn CommandExecutor,
     watch: Option<&WatchHandle>,
+    mouse: bool,
 ) -> io::Result<()> {
     install_panic_hook();
     enable_raw_mode()?;
     crossterm::execute!(io::stdout(), EnterAlternateScreen)?;
+    if mouse {
+        // Wheel + click (issue #26); `mouse = false` in config opts out
+        // and keeps the terminal's own selection behavior everywhere.
+        crossterm::execute!(io::stdout(), EnableMouseCapture)?;
+    }
 
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     let size = terminal.size()?;
@@ -164,6 +170,12 @@ fn event_loop(
                 dispatch(state, Msg::Resize(width, height), executor);
                 needs_draw = true;
             }
+            Some(Event::Mouse(mouse)) => {
+                if let Some(msg) = msg_for_mouse(mouse) {
+                    dispatch(state, msg, executor);
+                    needs_draw = true;
+                }
+            }
             _ => {}
         }
         // After input (or a tick): a debounced watch signal becomes the
@@ -182,7 +194,9 @@ fn event_loop(
 
 fn restore_terminal() -> io::Result<()> {
     disable_raw_mode()?;
-    crossterm::execute!(io::stdout(), LeaveAlternateScreen)?;
+    // DisableMouseCapture is unconditional: harmless when capture was
+    // never enabled, and the panic hook cannot know whether it was.
+    crossterm::execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
     Ok(())
 }
 

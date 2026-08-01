@@ -211,6 +211,39 @@ fn no_untracked_flag_excludes_untracked_files() {
     assert!(dump.contains("include_untracked = false"), "{dump}");
 }
 
+/// `mouse` (issue #26): on by default, `--no-mouse` and the config key
+/// both turn it off, and `--dump-config` reflects the merge.
+#[test]
+fn mouse_defaults_on_and_no_mouse_flag_disables() {
+    let dir = tempfile::tempdir().unwrap();
+    let no_config = dir.path().join("none.toml");
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &no_config)
+        .arg("--dump-config")
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("mouse = true"));
+
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &no_config)
+        .args(["--no-mouse", "--dump-config"])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("mouse = false"));
+
+    let user = dir.path().join("config.toml");
+    std::fs::write(&user, "mouse = false\n").unwrap();
+    let out = margin()
+        .current_dir(dir.path())
+        .env("MARGIN_CONFIG", &user)
+        .arg("--dump-config")
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("mouse = false"));
+}
+
 /// The default theme is `auto` (issue #27). A piped run is exactly the
 /// "terminal won't answer" case: detection must fall back to a real
 /// theme without stalling, and `auto` must be a valid `--theme` value.

@@ -50,7 +50,15 @@ In worktree reviews the sidebar marks files that have staged content with a
 |---|---|
 | `q`, `Ctrl-c` | quit |
 
-## Reserved (coming)
+## Mouse
 
-| Key | Planned action | Issue |
-|---|---|---|
+Strictly additive (issue #26) — everything above works without it.
+`mouse = false` in [config](configuration.md) or `--no-mouse` disables
+capture and keeps the terminal's own text selection.
+
+| Input | Action |
+|---|---|
+| wheel | move the cursor three rows |
+| left click (diff) | place the cursor on the clicked row |
+| left click (sidebar) | jump to that file |
+| left click (help open) | close the help overlay |

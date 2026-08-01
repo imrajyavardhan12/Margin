@@ -44,6 +44,9 @@ struct UserFile {
     theme: Option<String>,
     layout: Option<LayoutChoice>,
     include_untracked: Option<bool>,
+    /// Mouse capture in the TUI (issue #26): wheel scroll + click.
+    /// `false` keeps the terminal's own text selection everywhere.
+    mouse: Option<bool>,
     /// Back up discarded hunks to `.git/margin/trash/` (ADR-0014).
     /// Deliberately absent from [`RepoFile`]: a checked-out repository
     /// must never be able to disable backups.
@@ -76,6 +79,7 @@ pub struct Config {
     pub theme: String,
     pub layout: LayoutChoice,
     pub include_untracked: bool,
+    pub mouse: bool,
     pub discard_trash: bool,
     pub collapse: Vec<String>,
     pub themes: BTreeMap<String, CustomTheme>,
@@ -87,6 +91,7 @@ impl Default for Config {
             theme: "auto".into(),
             layout: LayoutChoice::Auto,
             include_untracked: true,
+            mouse: true,
             discard_trash: true,
             collapse: Vec::new(),
             themes: BTreeMap::new(),
@@ -104,6 +109,7 @@ impl Config {
         flag_theme: Option<&str>,
         flag_layout: Option<LayoutChoice>,
         flag_no_untracked: bool,
+        flag_no_mouse: bool,
     ) -> Result<Config, String> {
         let mut config = Config::default();
 
@@ -113,6 +119,7 @@ impl Config {
                 merge(&mut config.theme, user.theme);
                 merge_opt(&mut config.layout, user.layout);
                 merge_opt(&mut config.include_untracked, user.include_untracked);
+                merge_opt(&mut config.mouse, user.mouse);
                 merge_opt(&mut config.discard_trash, user.discard_trash);
                 merge_opt(&mut config.collapse, user.collapse);
                 merge_opt(&mut config.themes, user.themes);
@@ -135,6 +142,9 @@ impl Config {
         if flag_no_untracked {
             config.include_untracked = false;
         }
+        if flag_no_mouse {
+            config.mouse = false;
+        }
         Ok(config)
     }
 
@@ -152,8 +162,8 @@ impl Config {
             .collect::<Vec<_>>()
             .join(", ");
         let mut dump = format!(
-            "theme = \"{}\"\nlayout = \"{}\"\ninclude_untracked = {}\ndiscard_trash = {}\ncollapse = [{collapse}]\n",
-            self.theme, layout, self.include_untracked, self.discard_trash
+            "theme = \"{}\"\nlayout = \"{}\"\ninclude_untracked = {}\nmouse = {}\ndiscard_trash = {}\ncollapse = [{collapse}]\n",
+            self.theme, layout, self.include_untracked, self.mouse, self.discard_trash
         );
         if !self.themes.is_empty() {
             let names: Vec<&str> = self.themes.keys().map(String::as_str).collect();
@@ -276,7 +286,7 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
         std::fs::write(repo.join(".margin.toml"), "theme = \"blueprint\"\n").unwrap();
 
-        let config = Config::load(Some(&user), Some(&repo), None, None, false).unwrap();
+        let config = Config::load(Some(&user), Some(&repo), None, None, false, false).unwrap();
         assert_eq!(config.theme, "blueprint", "repo overrides user");
         assert!(!config.include_untracked, "user file applies");
 
@@ -286,11 +296,13 @@ mod tests {
             Some("foolscap"),
             Some(LayoutChoice::Split),
             true,
+            true,
         )
         .unwrap();
         assert_eq!(config.theme, "foolscap", "flags win");
         assert_eq!(config.layout, LayoutChoice::Split);
         assert!(!config.include_untracked);
+        assert!(!config.mouse, "--no-mouse flag applies last");
     }
 
     #[test]
@@ -298,7 +310,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let user = dir.path().join("config.toml");
         std::fs::write(&user, "them = \"carbon\"\n").unwrap();
-        let err = Config::load(Some(&user), None, None, None, false).unwrap_err();
+        let err = Config::load(Some(&user), None, None, None, false, false).unwrap_err();
         assert!(err.contains("them"), "{err}");
         assert!(err.contains("theme"), "suggestion expected: {err}");
     }
@@ -312,7 +324,7 @@ mod tests {
             "include_untracked = false\n",
         )
         .unwrap();
-        let err = Config::load(None, Some(dir.path()), None, None, false).unwrap_err();
+        let err = Config::load(None, Some(dir.path()), None, None, false, false).unwrap_err();
         assert!(
             err.contains("include_untracked"),
             "repo config must be display-only (ADR-0008): {err}"
@@ -326,13 +338,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join(".margin.toml"), "discard_trash = false\n").unwrap();
-        let err = Config::load(None, Some(dir.path()), None, None, false).unwrap_err();
+        let err = Config::load(None, Some(dir.path()), None, None, false, false).unwrap_err();
         assert!(err.contains("discard_trash"), "{err}");
 
         // And from the user file it is honored.
         let user = dir.path().join("config.toml");
         std::fs::write(&user, "discard_trash = false\n").unwrap();
-        let config = Config::load(Some(&user), None, None, None, false).unwrap();
+        let config = Config::load(Some(&user), None, None, None, false, false).unwrap();
         assert!(!config.discard_trash);
         assert!(Config::default().discard_trash, "backups default on");
     }
@@ -346,7 +358,7 @@ mod tests {
             "theme = \"mocha\"\n[themes.mocha]\nbase = \"carbon\"\naddition = \"#12fe56\"\n",
         )
         .unwrap();
-        let config = Config::load(Some(&user), None, None, None, false).unwrap();
+        let config = Config::load(Some(&user), None, None, None, false, false).unwrap();
         assert_eq!(config.theme, "mocha");
         let mocha = config.themes.get("mocha").unwrap();
         assert_eq!(mocha.base, "carbon");
@@ -364,7 +376,7 @@ mod tests {
             "[themes.mocha]\nbase = \"carbon\"\nadditional = \"#12fe56\"\n",
         )
         .unwrap();
-        let err = Config::load(Some(&user), None, None, None, false).unwrap_err();
+        let err = Config::load(Some(&user), None, None, None, false, false).unwrap_err();
         assert!(err.contains("additional"), "{err}");
 
         // ADR-0008 trust rule: a repo config must not define themes — a
@@ -376,7 +388,7 @@ mod tests {
             "[themes.evil]\nbase = \"ledger\"\n",
         )
         .unwrap();
-        let err = Config::load(None, Some(&repo), None, None, false).unwrap_err();
+        let err = Config::load(None, Some(&repo), None, None, false, false).unwrap_err();
         assert!(err.contains("themes"), "{err}");
     }
 
@@ -409,10 +421,10 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
         std::fs::write(repo.join(".margin.toml"), "collapse = [\"gen/**\"]\n").unwrap();
 
-        let config = Config::load(Some(&user), Some(&repo), None, None, false).unwrap();
+        let config = Config::load(Some(&user), Some(&repo), None, None, false, false).unwrap();
         assert_eq!(config.collapse, vec!["gen/**"], "later wins, like theme");
 
-        let user_only = Config::load(Some(&user), None, None, None, false).unwrap();
+        let user_only = Config::load(Some(&user), None, None, None, false, false).unwrap();
         assert_eq!(user_only.collapse, vec!["*.snap"]);
         assert!(Config::default().collapse.is_empty());
     }
@@ -425,6 +437,7 @@ mod tests {
             None,
             None,
             false,
+            false,
         )
         .unwrap();
         assert_eq!(config, Config::default());
@@ -434,7 +447,7 @@ mod tests {
     fn no_untracked_flag_overrides_the_default() {
         // ADR-0008: every config key has a flag; `--no-untracked` is
         // `include_untracked = false` applied last.
-        let config = Config::load(None, None, None, None, true).unwrap();
+        let config = Config::load(None, None, None, None, true, false).unwrap();
         assert!(!config.include_untracked);
         assert!(Config::default().include_untracked, "default stays on");
     }

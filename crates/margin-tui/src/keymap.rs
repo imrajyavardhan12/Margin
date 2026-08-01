@@ -1,9 +1,24 @@
 //! Key events -> [`Msg`], one table per input mode, no logic — so
 //! user-customizable keymaps later are a data change (ADR-0003).
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 use crate::app::{InputMode, Msg};
+
+/// Mouse events -> [`Msg`] (issue #26): wheel and left click only —
+/// drag, right/middle buttons, and modifiers stay with the terminal
+/// (so its native text selection keeps working where it can).
+pub fn msg_for_mouse(mouse: MouseEvent) -> Option<Msg> {
+    match mouse.kind {
+        MouseEventKind::ScrollDown => Some(Msg::WheelDown),
+        MouseEventKind::ScrollUp => Some(Msg::WheelUp),
+        MouseEventKind::Down(MouseButton::Left) => Some(Msg::Click {
+            column: mouse.column,
+            row: mouse.row,
+        }),
+        _ => None,
+    }
+}
 
 pub fn msg_for_key(key: KeyEvent, mode: InputMode) -> Option<Msg> {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);

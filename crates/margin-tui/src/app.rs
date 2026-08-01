@@ -21,6 +21,10 @@ pub enum LayoutMode {
 /// Main-pane width at which `Auto` switches to side-by-side.
 const SPLIT_THRESHOLD: u16 = 120;
 
+/// Cursor rows per mouse-wheel notch (issue #26) — the terminal's
+/// wheel events are per-notch, and 3 matches what terminals scroll.
+const WHEEL_ROWS: usize = 3;
+
 /// Computed pane geometry — the one place layout arithmetic lives, shared
 /// by `update` (scrolling, auto layout) and `view` (rect splitting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,6 +287,16 @@ pub enum Msg {
     CommandFinished(CommandResult),
     CursorDown,
     CursorUp,
+    /// Mouse wheel (issue #26): a few cursor rows per notch. Strictly
+    /// additive — the keyboard stays primary.
+    WheelDown,
+    WheelUp,
+    /// Left click at absolute terminal coordinates; `update` maps it to
+    /// a sidebar file jump or a diff-pane cursor move (issue #26).
+    Click {
+        column: u16,
+        row: u16,
+    },
     NextHunk,
     PrevHunk,
     NextFile,
@@ -657,6 +671,54 @@ impl AppState {
         scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
         picker.filtered = scored.into_iter().map(|(_, idx)| idx).collect();
         picker.selected = 0;
+    }
+
+    /// A left click (issue #26). Help closes; overlays keep their
+    /// keyboard grammar (clicks are ignored); the sidebar jumps to the
+    /// clicked file; the diff pane places the cursor on the clicked row
+    /// by walking visible rows through `row_height` — the same geometry
+    /// the renderer uses, so wrap can never make click and paint
+    /// disagree.
+    fn click(&mut self, column: u16, row: u16) {
+        if self.help_visible {
+            self.help_visible = false;
+            return;
+        }
+        if self.input_mode() != InputMode::Normal {
+            return;
+        }
+        if usize::from(row) >= self.content_height() {
+            return; // the status bar is not a target
+        }
+        if let Some(side_width) = self.panes().sidebar {
+            if column < side_width {
+                // Sidebar: the title occupies row 0, files follow 1:1.
+                let Some(file) = usize::from(row).checked_sub(1) else {
+                    return;
+                };
+                if let Some(target) = self
+                    .rows
+                    .iter()
+                    .position(|r| matches!(r, Row::FileHeader { .. }) && r.file() == file)
+                {
+                    self.cursor = target;
+                }
+                return;
+            }
+        }
+        // Diff pane: accumulate visual heights from the scroll top until
+        // the clicked line falls inside a row.
+        let target = usize::from(row);
+        let mut bottom = 0;
+        let mut idx = self.scroll;
+        while idx < self.rows.len() {
+            bottom += self.row_height(idx);
+            if bottom > target {
+                self.cursor = idx;
+                return;
+            }
+            idx += 1;
+        }
     }
 
     fn clamp_cursor(&mut self) {
@@ -1091,6 +1153,20 @@ pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
             state.clamp_cursor();
         }
         Msg::CursorUp => state.cursor = state.cursor.saturating_sub(1),
+        // Mouse (issue #26): wheel and click act only in normal mode —
+        // an overlay's keyboard grammar must not be bypassable by mouse.
+        Msg::WheelDown => {
+            if state.input_mode() == InputMode::Normal {
+                state.cursor = state.cursor.saturating_add(WHEEL_ROWS);
+                state.clamp_cursor();
+            }
+        }
+        Msg::WheelUp => {
+            if state.input_mode() == InputMode::Normal {
+                state.cursor = state.cursor.saturating_sub(WHEEL_ROWS);
+            }
+        }
+        Msg::Click { column, row } => state.click(column, row),
         Msg::NextHunk => state.jump(true, |r| matches!(r, Row::HunkHeader { .. })),
         Msg::PrevHunk => state.jump(false, |r| matches!(r, Row::HunkHeader { .. })),
         Msg::NextFile => state.jump(true, |r| matches!(r, Row::FileHeader { .. })),
@@ -1590,6 +1666,60 @@ mod tests {
         update(&mut state, Msg::GKey);
         update(&mut state, Msg::GKey);
         assert_eq!(state.scroll, 0);
+    }
+
+    #[test]
+    fn wheel_scrolls_and_click_places_the_cursor() {
+        let mut state = sample();
+        update(&mut state, Msg::Resize(80, 24));
+        update(&mut state, Msg::WheelDown);
+        assert_eq!(state.cursor, 3, "one notch = three rows");
+        update(&mut state, Msg::WheelDown);
+        update(&mut state, Msg::WheelDown);
+        assert_eq!(state.cursor, 8, "wheel clamps at the last row");
+        update(&mut state, Msg::WheelUp);
+        assert_eq!(state.cursor, 5);
+
+        // Diff pane (sidebar occupies the first 26 columns at 80 wide):
+        // rows are unwrapped, so terminal row N is row index scroll + N.
+        update(&mut state, Msg::Click { column: 40, row: 2 });
+        assert_eq!(state.cursor, 2);
+
+        // Sidebar: the title sits on row 0, files follow — clicking the
+        // first file jumps to its FileHeader row.
+        update(&mut state, Msg::Bottom);
+        update(&mut state, Msg::Click { column: 3, row: 1 });
+        assert_eq!(state.cursor, 0, "sidebar row 1 is the first file");
+        let clicked_title = state.cursor;
+        update(&mut state, Msg::Click { column: 3, row: 0 });
+        assert_eq!(state.cursor, clicked_title, "the title is not a file");
+
+        // The status bar line is not a target.
+        update(
+            &mut state,
+            Msg::Click {
+                column: 40,
+                row: 23,
+            },
+        );
+        assert_eq!(state.cursor, 0);
+    }
+
+    #[test]
+    fn mouse_respects_overlays() {
+        let mut state = sample();
+        update(&mut state, Msg::Resize(80, 24));
+        update(&mut state, Msg::ToggleHelp);
+        update(&mut state, Msg::Click { column: 40, row: 2 });
+        assert!(!state.help_visible, "a click closes the help overlay");
+        assert_eq!(state.cursor, 0, "and moves nothing");
+
+        // While search input is live, the mouse must not bypass the
+        // overlay's keyboard grammar.
+        update(&mut state, Msg::SearchStart);
+        update(&mut state, Msg::WheelDown);
+        update(&mut state, Msg::Click { column: 40, row: 2 });
+        assert_eq!(state.cursor, 0, "mouse is inert during search input");
     }
 
     #[test]
