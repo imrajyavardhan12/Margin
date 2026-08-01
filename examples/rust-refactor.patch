@@ -1,0 +1,23 @@
+diff --git a/src/retry.rs b/src/retry.rs
+index 3f9d2c1..8a41b7e 100644
+--- a/src/retry.rs
++++ b/src/retry.rs
+@@ -1,12 +1,14 @@
+ use std::time::Duration;
+ 
+-/// Retry an operation with a fixed delay.
+-pub fn retry<T>(mut op: impl FnMut() -> Option<T>, times: u32) -> Option<T> {
+-    for _ in 0..times {
++/// Retry an operation with exponential backoff.
++pub fn retry<T>(mut op: impl FnMut() -> Option<T>, attempts: u32) -> Option<T> {
++    let mut delay = Duration::from_millis(50);
++    for _ in 0..attempts {
+         if let Some(value) = op() {
+             return Some(value);
+         }
+-        std::thread::sleep(Duration::from_millis(100));
++        std::thread::sleep(delay);
++        delay *= 2;
+     }
+     None
+ }
