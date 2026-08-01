@@ -68,4 +68,4 @@ Still to come (issues): `view/{search,picker}` (#7), wrap-aware layout
 (#14), staging in `margin-vcs` behind explicit Msgs (#10–#12, v0.2).
 
 For agent-oriented operational detail (commands, gotchas, testing
-playbook), see [AGENTS.md](../AGENTS.md).
+playbook), see [AGENTS.md](https://github.com/imrajyavardhan12/Margin/blob/main/AGENTS.md).

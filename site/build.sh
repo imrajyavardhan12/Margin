@@ -6,10 +6,12 @@
 #   site/build/assets/         the demo GIF the landing page shows
 #
 # The docs are built from docs/ in place — no copies to drift — except for
-# CHANGELOG.md and CONTRIBUTING.md, which live at the repo root because
-# that is where GitHub looks for them. mdBook cannot reach outside its src
-# dir, so those two are staged in and removed again (they are gitignored,
-# so a failed run cannot leave the tree dirty in a way that gets committed).
+# CHANGELOG.md, which lives at the repo root because that is where GitHub
+# looks for it. mdBook cannot reach outside its src dir, so it is staged
+# in and removed again (it is gitignored, so a failed run cannot leave the
+# tree dirty in a way that gets committed). CONTRIBUTING.md deliberately
+# stays out of the book: it links to AGENTS.md, CODE_OF_CONDUCT.md and
+# issue labels, all of which only resolve on GitHub.
 #
 # Usage: site/build.sh          (needs mdbook on PATH)
 set -euo pipefail
@@ -17,12 +19,11 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-staged=(docs/CHANGELOG.md docs/CONTRIBUTING.md)
+staged=(docs/CHANGELOG.md)
 cleanup() { rm -f "${staged[@]}"; }
 trap cleanup EXIT
 
 cp CHANGELOG.md docs/CHANGELOG.md
-cp CONTRIBUTING.md docs/CONTRIBUTING.md
 
 rm -rf site/build
 mdbook build
