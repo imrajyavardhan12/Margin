@@ -38,3 +38,12 @@ questions or, worse, silently unsettle them.
 | [0014](0014-discard-safety.md) | Discard: trash before destroy, worktree-only, typed confirm | Accepted |
 | [0015](0015-forge-via-gh.md) | Forge access through the user's `gh` CLI, quarantined in margin-vcs | Accepted |
 | [0016](0016-completions-and-man-at-runtime.md) | Completions and the man page generate at runtime from the binary | Accepted |
+| [0017](0017-unbacked-discard-escape-hatch.md) | Unbacked discard is an explicit, per-invocation escape hatch | Accepted |
+| [0018](0018-no-implicit-network-or-telemetry.md) | No implicit network access or telemetry | Accepted |
+| [0019](0019-explicit-review-effect-seams.md) | Explicit read, write, and runtime effect seams | Accepted |
+| [0020](0020-versioned-atomic-review-state.md) | Persist review state as one versioned, atomic record | Accepted |
+| [0021](0021-selective-pre-1-0-compatibility.md) | Selective user-facing compatibility before 1.0 | Accepted |
+| [0022](0022-exit-code-semantics.md) | Distinguish clean, operational, and invocation outcomes | Accepted |
+| [0023](0023-tool-neutral-agent-boundary.md) | Tool-neutral human review boundary through 1.0 | Accepted |
+| [0024](0024-sha-pinned-ci-supply-chain.md) | SHA-pinned, least-privilege CI supply chain | Accepted |
+| [0025](0025-crates-io-package-identity.md) | Publish the Margin binary as the `margin-review` package | Accepted |

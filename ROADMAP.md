@@ -1,67 +1,102 @@
 # Roadmap
 
-This is a promise of direction, not of dates. Issues tagged with milestone
-labels (`M1`, `M2`, …) are the source of truth for what's in flight.
+Margin is becoming the best open-source review workspace for developers who
+remain accountable for code produced with coding-agent assistance. Direction
+comes from observed review friction and user evidence, not feature count or a
+calendar commitment.
 
-## v0.1 — The best read-only diff review in a terminal (`M1`)
+The issue tracker is the source of truth for work in progress. The
+[CHANGELOG](CHANGELOG.md) records the detail of shipped releases.
 
-The MVP must be flawless at *viewing* before Margin earns the right to touch
-your working tree.
+## Shipped foundation
 
-- [x] Foundation: workspace, ADRs, CI, governance
-- [x] Changeset model + tolerant unified-diff parser, corpus-tested
-- [x] Git sources: worktree (incl. untracked), staged, revisions (#1)
-- [x] TUI: sidebar + unified view + vim navigation + help (#2)
-- [x] Side-by-side view, responsive auto layout (#3)
-- [ ] Wrap long lines (`w`) (#14)
-- [x] Syntax highlighting + word-level intra-line diff, lazy + budgeted (#4)
-- [x] Real CLI (`diff`/`show`/`patch`/`pager`), stdin patches, two-file
-      mode, byte-identical pager passthrough (#5)
-- [x] Config + 4 themes + ANSI-16/NO_COLOR fallback + `--dump-config` (#6)
-- [ ] Custom themes from TOML (#15, post-v0.1 candidate)
-- [x] Search `/` with match highlighting and fuzzy file picker `f` (#7)
-- [ ] Parser fuzz target + weekly fuzz CI (#8)
-- [ ] Shell completions + man page (#16)
-- [ ] examples/ directory with runnable demo patches (#17)
-- [ ] `--no-untracked` flag (#18)
-- [ ] Hunk position in the status bar (#19)
-- [x] Release pipeline: cargo-dist with 6-target binaries + installers
-      (`v0.1.0-alpha.1` ships pre-releases; brew tap, crates.io, and the
-      demo GIF complete with #9 at v0.1.0)
+- **v0.1 — Review:** unified and split diff views, navigation, search, file
+  picker, wrapping, syntax and intra-line highlighting, Git and patch inputs,
+  themes, configuration, pager compatibility, fuzzing, benchmarks, and release
+  distribution.
+- **v0.2 — Act safely:** stage, unstage, discard with recovery, watch and
+  reload, collapse generated files, persistent viewed marks, and structured
+  JSON output.
+- **v0.3 — Review workflows:** GitHub pull-request input through `gh`, stable
+  viewed marks across changing revisions, automatic terminal theme selection,
+  and hunk position feedback.
+- **v0.4 — Ergonomics:** custom themes, mouse support, shell completions, a man
+  page, examples, and per-invocation untracked-file control.
+- **v0.5 — Feedback loop:** per-hunk review notes, Markdown export, and faster
+  staged-state summaries.
 
-Quality bars (release blockers): < 50 ms first paint on a 100-file diff;
-smooth scrolling on 250k lines; passthrough byte-identity; zero fuzz panics.
+## v0.6 — Trust release
 
-## v0.2 — Act on the diff (`M2`) — the launch release
+v0.6 is feature-frozen. Its purpose is to make Margin safe and dependable
+before broader promotion; new VCS integrations and broad UI capabilities do
+not enter this release.
 
-- [ ] Stage / unstage hunks (`s` / `u`) (#10)
-- [ ] Discard hunk with typed confirmation + undo patch in `.git/margin/trash/` (#11)
-- [ ] Watch mode (`-w`): auto-reload on change, cursor preserved (#12)
-- [ ] Mark files viewed (`m`), persistent per `(repo, diff-id)` (#20)
-- [ ] Collapse files (`za`/`zA`) + auto-collapse generated/lockfiles (#21)
+Priorities:
 
-## v0.3 — Review workflows
+- Guarantee terminal restoration across every normal error and panic path.
+- Make discard backup, apply, cleanup, and reload behavior testable as one
+  transaction.
+- Replace persistent unbacked discard with the explicit, invocation-only
+  escape hatch defined by ADR-0017.
+- Consolidate viewed marks and review notes into the versioned, atomic review
+  state defined by ADR-0020, surfacing failures without interrupting review.
+- Implement and test the stable `0`/`1`/`2` outcome contract from ADR-0022.
+- Reconcile the README, architecture guide, crate documentation, ADR status,
+  CLI help, and website with the shipped product.
+- Protect the main branch and migrate every GitHub Action to the enforced,
+  least-privilege SHA-pinning policy in ADR-0024.
+- Publish the executable as the `margin-review` crates.io package while
+  preserving the `margin` command (ADR-0025).
+- Smoke-test supported installation paths and release artifacts.
+- Dogfood complete agent-assisted review sessions and collect external beta
+  feedback before declaring the release stable.
 
-- [ ] Per-hunk review notes, exported as Markdown (paste into a PR, or feed
-      back to the agent that wrote the code) (#23)
-- [ ] `--json`: structured changeset + review decisions for scripts and agents (#22)
-- [ ] `margin pr <number>` via `gh` (#24)
-- [ ] Jujutsu (`jj`) support as a new `DiffSource` (#25)
-- [ ] Custom TOML themes (#15)
+Architecture work belongs in v0.6 only when it directly improves a safety
+invariant, testability, or the locality of correctness-critical behavior.
+File-size cleanup by itself is not a release goal.
 
-Unmilestoned backlog: mouse support (#26), light/dark auto-detection (#27).
-The tracker's [milestones](https://github.com/imrajyavardhan12/Margin/milestones)
-are the live source of truth.
+### Graduation gate
+
+v0.6 first ships as `v0.6.0-rc.1`. Stable `v0.6.0` requires:
+
+- clean release-artifact installation on macOS, Linux, and Windows;
+- at least five independent testers completing the disposable-repository trust
+  scenario (stage, unstage, discard, undo, notes, watch, terminal cleanup);
+- at least seven days without an unresolved critical or high-impact defect;
+- no candidate-period changes except fixes and documentation.
+
+## After v0.6
+
+- Jujutsu support remains the leading integration candidate, but should be
+  designed with daily `jj` users rather than inferred from Git semantics.
+- Additional packaging ecosystems should be added with maintainers who use
+  those ecosystems, not merely to increase a badge count.
+- New workflows should enter the roadmap only after a concrete review scenario
+  and user need are documented.
+
+## Product evidence
+
+Margin has no numerical adoption targets before v0.6 establishes a meaningful
+baseline. Early progress is assessed through voluntary feedback, repeated-use
+stories, reported friction, trust failures, and contribution quality—not star,
+download, or release-count quotas. Reconsider quantitative goals only after
+v0.6 is stable and its first external feedback cycle is complete.
 
 ## Toward 1.0
 
-Stability promise (config, keybindings, exit codes), zero known data-loss
-bugs in write paths, packaged in ≥4 ecosystems (brew, AUR, nixpkgs, winget),
-three consecutive boring releases.
+- Stable configuration, keybinding, JSON-schema, and exit-code contracts.
+- Zero known data-loss defects in write paths.
+- Several consecutive uneventful releases used in real agent-assisted review
+  workflows.
+- Sustainable issue triage, contribution review, security response, and
+  release ownership.
+- Distribution through multiple actively maintained installation channels.
 
 ## Explicitly out of scope
 
-Structural/AST diffing (use [difftastic](https://github.com/Wilfred/difftastic)),
-commit-graph/branch management (use [gitui](https://github.com/gitui-org/gitui)
-or lazygit), merge-conflict resolution, an embeddable UI component, and any
-daemon. Scope discipline is a feature.
+Structural or AST diffing (use
+[difftastic](https://github.com/Wilfred/difftastic)), commit-graph and branch
+management (use [gitui](https://github.com/gitui-org/gitui) or lazygit), merge
+conflict resolution, an embeddable UI component, a daemon, and built-in coding-
+agent orchestration or vendor SDKs through 1.0 (ADR-0023). Scope discipline is
+a feature.

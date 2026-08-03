@@ -4,10 +4,10 @@
 >
 > **[margin docs & site →](https://imrajyavardhan12.github.io/Margin/)**
 
-**Margin is a fast, keyboard-first terminal diff viewer** for reviewing Git
-changes, staged/unstaged work, patches — and the changesets your AI agents
-keep producing. One static binary. No runtime. Starts before you finish
-blinking.
+**Margin is the terminal review workspace for agent-assisted code.** Inspect
+changes, accept good hunks, reject bad ones safely, and hand precise feedback
+back to the agent — while remaining accountable for every change. It also
+reviews ordinary Git changes, staged work, revisions, and patches.
 
 <!-- Regenerate: cargo build --release -p margin && vhs assets/demo.tape -->
 ![margin demo](assets/demo.gif)
@@ -15,7 +15,7 @@ blinking.
 *Read the diff, stage the good part, leave a note on the rest, check the
 file off — then hand the notes back as Markdown.*
 
-> **Status: v0.5.0.** Everything above works today. The review loop
+> **Status: v0.5.1.** Everything above works today. The review loop
 > (stage/unstage/discard by hunk, mark viewed, review notes), GitHub PR
 > review through your own `gh`, watch mode, JSON output, four themes plus
 > custom ones, and a byte-identical pager mode. Rough edges and missing
@@ -38,6 +38,9 @@ file off — then hand the notes back as Markdown.*
   hunk with `c`, then `margin --notes` prints every remark as Markdown with
   `path:line` anchors — paste it into a PR, or hand it straight back to the
   agent that wrote the code.
+- **Private by construction.** No telemetry, update checks, crash submission,
+  or implicit network access. Explicit remote commands such as `margin pr`
+  delegate networking and authentication to tools you already control.
 - **A good terminal citizen.** Safe as `core.pager` (byte-identical
   passthrough when piped), `NO_COLOR`, 16-color fallback, tmux/ssh-clean,
   works on macOS, Linux, and Windows.

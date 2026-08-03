@@ -1,5 +1,12 @@
 # Margin — Project Blueprint
 
+> **Historical document.** This is the founding plan captured before Margin's
+> first release. It is preserved as project history and is not a current
+> specification. See the root `README.md` for the product, `ROADMAP.md` for
+> direction, `docs/architecture.md` for current architecture, and `docs/adr/`
+> for decisions. Availability claims and future-tense statements below are
+> intentionally not maintained.
+
 > A fast, keyboard-first terminal diff viewer for reviewing Git changes, patches,
 > and AI-authored code. Written in Rust. Single binary. Starts instantly.
 

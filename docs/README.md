@@ -1,7 +1,8 @@
 # Margin documentation
 
-Margin is a fast, keyboard-first terminal diff viewer for reviewing Git
-changes, patches, and the changesets your AI agents keep producing.
+Margin is the terminal review workspace for agent-assisted code: inspect
+changes, accept good hunks, reject bad ones safely, and return precise feedback
+while remaining accountable for every change.
 
 ```bash
 brew install imrajyavardhan12/tap/margin
@@ -15,9 +16,20 @@ margin            # review the working tree
 | learn the keys | [Keybindings](keybindings.md) |
 | change themes, layout, or behaviour | [Configuration](configuration.md) · [Themes](themes.md) |
 | script Margin or feed an agent | [JSON output](json-output.md) |
-| understand how it is built | [Architecture](architecture.md) |
+| understand current direction | [Roadmap](https://github.com/imrajyavardhan12/Margin/blob/main/ROADMAP.md) |
+| understand how it is built now | [Architecture](architecture.md) |
 | know *why* it is built that way | [Decision records](adr/) |
+| see what shipped | [Changelog](CHANGELOG.md) |
+| read the original plan | [Historical blueprint](BLUEPRINT.md) |
 | contribute | [Contributing](https://github.com/imrajyavardhan12/Margin/blob/main/CONTRIBUTING.md) |
+
+## Documentation authority
+
+The root `CONTEXT.md` defines domain language, the README describes the current
+product, the roadmap describes direction, this book's architecture page
+describes the current Implementation, ADRs preserve durable decisions, and the
+changelog records shipped history. The blueprint is historical and is not
+maintained as a live specification.
 
 ## The review loop
 
