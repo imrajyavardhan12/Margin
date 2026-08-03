@@ -38,7 +38,7 @@ crates/margin-core   PURE: no I/O, no TUI deps, panic-free on untrusted input
   ansi.rs            strip_ansi (git colorizes pager output)
   json.rs            --json schema (versioned public surface; docs/json-output.md)
   collapse.rs        is_generated heuristics + glob_match (za auto-fold)
-crates/margin-vcs    the ONLY crate doing I/O; git2 quarantined here
+crates/margin-vcs    read/write VCS adapters; git2 quarantined here
   git.rs             GitWorktree/GitStaged/GitShow/GitRevRange + conversion
   files.rs           TwoFiles (git2 buffer diffing, no repo)
   gh.rs              GhPr: PRs via the user's gh CLI subprocess (ADR-0015)
@@ -54,8 +54,9 @@ crates/margin-tui    Elm: AppState + Msg + update() + pure view(); NEVER imports
   runtime.rs         terminal session, panic guard, poll loop, command dispatch
                      (update() returns Command; CommandExecutor impl lives in the bin),
                      WatchHandle debounce (bin's notify watcher feeds it; -w)
-crates/margin        bin: clap CLI (main.rs), config discovery/merge (config.rs),
-                     per-DiffId review state: viewed.rs (marks), notes.rs (#23)
+crates/margin        bin: clap dispatch (main.rs), capability-aware Review Session
+                     + effect execution (review.rs), config discovery/merge
+                     (config.rs), per-DiffId state: viewed.rs + notes.rs
 ```
 
 Dependency rule (compiler-enforced, do not work around):
