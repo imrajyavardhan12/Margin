@@ -83,6 +83,143 @@ impl WatchHandle {
     }
 }
 
+/// A terminal mode transition owned by [`TerminalSession`]. One private
+/// operation Interface is enough to inject failures without abstracting
+/// ratatui or proliferating setup/cleanup methods.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TerminalAction {
+    EnableRaw,
+    EnterAlternate,
+    EnableMouse,
+    DisableMouse,
+    LeaveAlternate,
+    DisableRaw,
+}
+
+trait TerminalControl {
+    fn perform(&mut self, action: TerminalAction) -> io::Result<()>;
+}
+
+struct CrosstermControl;
+
+impl TerminalControl for CrosstermControl {
+    fn perform(&mut self, action: TerminalAction) -> io::Result<()> {
+        match action {
+            TerminalAction::EnableRaw => enable_raw_mode(),
+            TerminalAction::EnterAlternate => {
+                crossterm::execute!(io::stdout(), EnterAlternateScreen)
+            }
+            TerminalAction::EnableMouse => {
+                crossterm::execute!(io::stdout(), EnableMouseCapture)
+            }
+            TerminalAction::DisableMouse => {
+                crossterm::execute!(io::stdout(), DisableMouseCapture)
+            }
+            TerminalAction::LeaveAlternate => {
+                crossterm::execute!(io::stdout(), LeaveAlternateScreen)
+            }
+            TerminalAction::DisableRaw => disable_raw_mode(),
+        }
+    }
+}
+
+/// Scope-bound ownership of every terminal mode Margin enables.
+///
+/// A flag is set *before* its setup operation. Terminal writes can fail after
+/// partially taking effect, so an error still triggers the matching best-effort
+/// cleanup. Explicit finish reports cleanup errors; unwinding uses `Drop`.
+struct TerminalSession<'a> {
+    control: &'a mut dyn TerminalControl,
+    raw: bool,
+    alternate: bool,
+    mouse: bool,
+}
+
+impl<'a> TerminalSession<'a> {
+    fn start(control: &'a mut dyn TerminalControl, mouse: bool) -> io::Result<Self> {
+        let mut session = Self {
+            control,
+            raw: false,
+            alternate: false,
+            mouse: false,
+        };
+
+        session.raw = true;
+        session.control.perform(TerminalAction::EnableRaw)?;
+        session.alternate = true;
+        session.control.perform(TerminalAction::EnterAlternate)?;
+        if mouse {
+            // Wheel + click (issue #26); `mouse = false` in config opts out
+            // and keeps the terminal's own selection behavior everywhere.
+            session.mouse = true;
+            session.control.perform(TerminalAction::EnableMouse)?;
+        }
+        Ok(session)
+    }
+
+    /// Attempt every applicable cleanup operation, retaining the first error.
+    fn restore(&mut self) -> io::Result<()> {
+        let mut first_error = None;
+        if self.mouse {
+            self.mouse = false;
+            remember_error(
+                &mut first_error,
+                self.control.perform(TerminalAction::DisableMouse),
+            );
+        }
+        if self.alternate {
+            self.alternate = false;
+            remember_error(
+                &mut first_error,
+                self.control.perform(TerminalAction::LeaveAlternate),
+            );
+        }
+        if self.raw {
+            self.raw = false;
+            remember_error(
+                &mut first_error,
+                self.control.perform(TerminalAction::DisableRaw),
+            );
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+
+    /// Preserve the runtime error when both work and restoration fail.
+    fn finish<T>(mut self, result: io::Result<T>) -> io::Result<T> {
+        let cleanup = self.restore();
+        match result {
+            Err(primary) => Err(primary),
+            Ok(value) => cleanup.map(|()| value),
+        }
+    }
+}
+
+impl Drop for TerminalSession<'_> {
+    fn drop(&mut self) {
+        let _ = self.restore();
+    }
+}
+
+fn remember_error(first: &mut Option<io::Error>, result: io::Result<()>) {
+    if let Err(error) = result {
+        if first.is_none() {
+            *first = Some(error);
+        }
+    }
+}
+
+/// Execute work while a fully or partially configured terminal is owned by a
+/// guard. Every fallible ratatui/event-loop operation belongs inside `body`.
+fn with_terminal_session<T>(
+    control: &mut dyn TerminalControl,
+    mouse: bool,
+    body: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
+    let session = TerminalSession::start(control, mouse)?;
+    let result = body();
+    session.finish(result)
+}
+
 /// Run the review session to completion (user quit) or error. The
 /// executor performs any side effects `update` requests (ADR-0013);
 /// `watch`, when present, feeds debounced reloads (issue #12).
@@ -93,21 +230,13 @@ pub fn run(
     mouse: bool,
 ) -> io::Result<()> {
     install_panic_hook();
-    enable_raw_mode()?;
-    crossterm::execute!(io::stdout(), EnterAlternateScreen)?;
-    if mouse {
-        // Wheel + click (issue #26); `mouse = false` in config opts out
-        // and keeps the terminal's own selection behavior everywhere.
-        crossterm::execute!(io::stdout(), EnableMouseCapture)?;
-    }
-
-    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-    let size = terminal.size()?;
-    update(state, Msg::Resize(size.width, size.height));
-
-    let result = event_loop(&mut terminal, state, executor, watch);
-    restore_terminal()?;
-    result
+    let mut control = CrosstermControl;
+    with_terminal_session(&mut control, mouse, || {
+        let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
+        let size = terminal.size()?;
+        update(state, Msg::Resize(size.width, size.height));
+        event_loop(&mut terminal, state, executor, watch)
+    })
 }
 
 /// One message through the core; any requested effect executes and its
@@ -192,17 +321,30 @@ fn event_loop(
     }
 }
 
+/// Best-effort unconditional restoration for panic paths. The scope guard owns
+/// normal errors and unwinding; this fallback also runs with `panic = abort`,
+/// when destructors do not run. Every operation is attempted independently.
 fn restore_terminal() -> io::Result<()> {
-    disable_raw_mode()?;
-    // DisableMouseCapture is unconditional: harmless when capture was
-    // never enabled, and the panic hook cannot know whether it was.
-    crossterm::execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
-    Ok(())
+    let mut control = CrosstermControl;
+    let mut first_error = None;
+    remember_error(
+        &mut first_error,
+        control.perform(TerminalAction::DisableMouse),
+    );
+    remember_error(
+        &mut first_error,
+        control.perform(TerminalAction::LeaveAlternate),
+    );
+    remember_error(
+        &mut first_error,
+        control.perform(TerminalAction::DisableRaw),
+    );
+    first_error.map_or(Ok(()), Err)
 }
 
 /// Restore the terminal before the default panic output, then point at the
-/// issue tracker. Installed once; the RAII-less design is deliberate —
-/// a hook fires even on panics that unwind past `run`.
+/// issue tracker. Installed once; the hook complements the scope guard because
+/// it still runs when panic handling aborts instead of unwinding.
 fn install_panic_hook() {
     static INSTALL: Once = Once::new();
     INSTALL.call_once(|| {
@@ -223,6 +365,144 @@ mod tests {
     use super::*;
 
     const WINDOW: Duration = Duration::from_millis(200);
+
+    #[derive(Default)]
+    struct FakeTerminal {
+        calls: Vec<TerminalAction>,
+        fail: Vec<TerminalAction>,
+    }
+
+    impl FakeTerminal {
+        fn failing(actions: &[TerminalAction]) -> Self {
+            Self {
+                calls: Vec::new(),
+                fail: actions.to_vec(),
+            }
+        }
+
+        fn perform(&mut self, action: TerminalAction) -> io::Result<()> {
+            self.calls.push(action);
+            if self.fail.contains(&action) {
+                Err(io::Error::other(format!("{action:?} failed")))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    impl TerminalControl for FakeTerminal {
+        fn perform(&mut self, action: TerminalAction) -> io::Result<()> {
+            FakeTerminal::perform(self, action)
+        }
+    }
+
+    #[test]
+    fn setup_failures_restore_every_mode_that_may_have_changed() {
+        let cases = [
+            (
+                TerminalAction::EnableRaw,
+                vec![TerminalAction::EnableRaw, TerminalAction::DisableRaw],
+            ),
+            (
+                TerminalAction::EnterAlternate,
+                vec![
+                    TerminalAction::EnableRaw,
+                    TerminalAction::EnterAlternate,
+                    TerminalAction::LeaveAlternate,
+                    TerminalAction::DisableRaw,
+                ],
+            ),
+            (
+                TerminalAction::EnableMouse,
+                vec![
+                    TerminalAction::EnableRaw,
+                    TerminalAction::EnterAlternate,
+                    TerminalAction::EnableMouse,
+                    TerminalAction::DisableMouse,
+                    TerminalAction::LeaveAlternate,
+                    TerminalAction::DisableRaw,
+                ],
+            ),
+        ];
+
+        for (failure, expected) in cases {
+            let mut terminal = FakeTerminal::failing(&[failure]);
+            {
+                let result = TerminalSession::start(&mut terminal, true);
+                assert!(result.is_err(), "{failure:?} must fail setup");
+            }
+            assert_eq!(terminal.calls, expected, "cleanup after {failure:?}");
+        }
+    }
+
+    #[test]
+    fn any_error_after_setup_restores_the_terminal_and_keeps_the_error() {
+        // Terminal creation, size queries, drawing, and event reads all execute
+        // inside this body in `run`; one injected body failure covers their
+        // shared early-return seam.
+        let mut terminal = FakeTerminal::failing(&[TerminalAction::DisableMouse]);
+        let result: io::Result<()> = with_terminal_session(&mut terminal, true, || {
+            Err(io::Error::other("event read failed"))
+        });
+
+        let Err(error) = result else {
+            panic!("the injected runtime failure must be returned");
+        };
+        assert_eq!(
+            error.to_string(),
+            "event read failed",
+            "cleanup must not hide the runtime error"
+        );
+        assert_eq!(
+            terminal.calls,
+            vec![
+                TerminalAction::EnableRaw,
+                TerminalAction::EnterAlternate,
+                TerminalAction::EnableMouse,
+                TerminalAction::DisableMouse,
+                TerminalAction::LeaveAlternate,
+                TerminalAction::DisableRaw,
+            ]
+        );
+    }
+
+    #[test]
+    fn cleanup_attempts_every_step_and_reports_its_first_error() {
+        let failures = [
+            TerminalAction::DisableMouse,
+            TerminalAction::LeaveAlternate,
+            TerminalAction::DisableRaw,
+        ];
+        let mut terminal = FakeTerminal::failing(&failures);
+        let result = with_terminal_session(&mut terminal, true, || Ok(()));
+
+        let Err(error) = result else {
+            panic!("cleanup failures must be returned");
+        };
+        assert_eq!(
+            error.to_string(),
+            "DisableMouse failed",
+            "the first cleanup failure is the actionable one"
+        );
+        assert!(terminal.calls.ends_with(&failures));
+    }
+
+    #[test]
+    fn unwinding_restores_terminal_modes() {
+        let mut terminal = FakeTerminal::default();
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _: io::Result<()> = with_terminal_session(&mut terminal, true, || {
+                panic!("injected draw panic");
+            });
+        }));
+
+        assert!(panic.is_err());
+        assert!(terminal.calls.ends_with(&[
+            TerminalAction::DisableMouse,
+            TerminalAction::LeaveAlternate,
+            TerminalAction::DisableRaw,
+        ]));
+    }
 
     #[test]
     fn debounce_waits_for_quiet_then_fires_once() {
