@@ -7,7 +7,7 @@ body:
     attributes:
       label: Margin version
       description: Output of `margin --version`
-      placeholder: margin 0.1.0
+      placeholder: margin 0.5.1
     validations:
       required: true
   - type: input
@@ -39,8 +39,22 @@ body:
       label: Expected vs actual
     validations:
       required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      description: Choose the highest impact you observed.
+      options:
+        - Incorrect or confusing display
+        - Workflow interrupted, no work lost
+        - Terminal left in a broken state
+        - Index or working tree changed unexpectedly
+        - Work or review state may have been lost
+        - Privacy or security concern
+    validations:
+      required: true
   - type: textarea
     id: extra
     attributes:
       label: Anything else
-      description: Screenshots, `--dump-config` output, panic message…
+      description: Screenshots, `--dump-config` output, panic message… Never attach private source or patches without scrubbing them first.

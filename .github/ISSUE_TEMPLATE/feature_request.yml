@@ -1,30 +1,63 @@
-name: Feature request
-description: Propose an improvement or new capability
+name: Validated feature work
+description: Scope executable work after validating the need in Discussions
 labels: ["type:feat", "needs-triage"]
 body:
-  - type: textarea
-    id: problem
+  - type: markdown
     attributes:
-      label: The problem
-      description: What were you trying to do when you wished Margin did this?
-        Concrete workflow beats abstract feature.
+      value: |
+        Open-ended ideas belong in [Discussions](https://github.com/imrajyavardhan12/Margin/discussions) first. Use this form when a concrete user scenario has been validated and the work can be reviewed independently.
+  - type: input
+    id: discussion
+    attributes:
+      label: Validating discussion
+      description: Link to the Discussion or prior issue that established the user need.
+      placeholder: https://github.com/imrajyavardhan12/Margin/discussions/...
     validations:
       required: true
   - type: textarea
-    id: proposal
+    id: scenario
     attributes:
-      label: Proposed behavior
-      description: What should happen, including keybinding/flag/config ideas if you have them.
+      label: Review scenario
+      description: Who encountered the problem, and during which concrete review workflow?
     validations:
       required: true
   - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives / workarounds you considered
-  - type: checkboxes
     id: scope
     attributes:
-      label: Scope check
+      label: Smallest useful scope
+      description: Define the observable behavior and explicitly state what is not included.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List independently verifiable outcomes.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation approach
+      description: Which automated tests and manual review scenarios prove this works?
+    validations:
+      required: true
+  - type: textarea
+    id: surfaces
+    attributes:
+      label: Compatibility and safety surfaces
+      description: Note effects on writes, persistence, privacy, CLI, config, JSON, keybindings, or release behavior. Write "None" when not applicable.
+    validations:
+      required: true
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Readiness check
       options:
-        - label: I checked ROADMAP.md's "explicitly out of scope" section and this isn't on it
+        - label: This is not listed as explicitly out of scope in ROADMAP.md
+          required: true
+        - label: This work is permitted by the current release phase or is intentionally parked for later
           required: true

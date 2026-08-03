@@ -29,8 +29,18 @@
   - [0014 — Discard safety](adr/0014-discard-safety.md)
   - [0015 — Forge via gh](adr/0015-forge-via-gh.md)
   - [0016 — Completions & man at runtime](adr/0016-completions-and-man-at-runtime.md)
+  - [0017 — Unbacked discard escape hatch](adr/0017-unbacked-discard-escape-hatch.md)
+  - [0018 — No implicit network or telemetry](adr/0018-no-implicit-network-or-telemetry.md)
+  - [0019 — Explicit review effect seams](adr/0019-explicit-review-effect-seams.md)
+  - [0020 — Versioned atomic review state](adr/0020-versioned-atomic-review-state.md)
+  - [0021 — Selective pre-1.0 compatibility](adr/0021-selective-pre-1-0-compatibility.md)
+  - [0022 — Exit-code semantics](adr/0022-exit-code-semantics.md)
+  - [0023 — Tool-neutral agent boundary](adr/0023-tool-neutral-agent-boundary.md)
+  - [0024 — SHA-pinned CI supply chain](adr/0024-sha-pinned-ci-supply-chain.md)
+  - [0025 — crates.io package identity](adr/0025-crates-io-package-identity.md)
   - [ADR template](adr/template.md)
 
----
+# Project history
 
-[Changelog](CHANGELOG.md)
+- [Founding blueprint (historical)](BLUEPRINT.md)
+- [Changelog](CHANGELOG.md)

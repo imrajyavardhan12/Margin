@@ -21,6 +21,17 @@ working tree. Reports we especially care about:
 - Escape-sequence injection: diff content must never be able to emit raw
   control sequences through Margin's renderer.
 
+## Privacy and network behavior
+
+Margin does not collect telemetry, check for updates, submit crashes, or make
+implicit network requests. Code, paths, patches, and review notes remain local.
+Explicit remote commands such as `margin pr` delegate network access and
+authentication to a tool the user already controls (`gh` in that case); Margin
+never stores the credentials itself. See ADR-0018.
+
+A release that violates this policy is a security regression and should be
+reported privately through the channel above.
+
 ## Supported versions
 
 Pre-1.0: the latest minor release only.

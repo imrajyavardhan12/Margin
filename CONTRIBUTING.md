@@ -33,6 +33,12 @@ The compiler enforces it via Cargo.toml; reviewers enforce the spirit.
 
 ## Making changes
 
+`main` is protected: changes arrive through pull requests, required CI checks
+must pass, and review conversations must be resolved. Force-pushes and branch
+deletion are disabled. While Margin has one active maintainer, no external
+approval is mandatory; establish one required independent approval when a
+second maintainer joins. Administrative bypass is reserved for emergencies.
+
 - **Branch from `main`**, keep PRs focused — one logical change.
 - **Commit/PR titles use [Conventional Commits](https://www.conventionalcommits.org)**
   (`feat:`, `fix:`, `perf:`, `docs:`, `refactor:`, `test:`, `chore:`).
@@ -43,8 +49,23 @@ The compiler enforces it via Cargo.toml; reviewers enforce the spirit.
   this is how the corpus ratchet works.
 - **UI changes**: run `cargo insta review` to update frame snapshots; the
   snapshot diff in your PR *is* the UI review. Include a before/after note.
-- **New keybindings or config keys** are stability surfaces — they need a line
-  in `docs/keybindings.md` / `docs/configuration.md` and a CHANGELOG entry.
+- **User-facing compatibility is protected before 1.0** (ADR-0021). CLI
+  behavior, config keys, JSON schemas, default keybindings, install URLs, and
+  persisted review state need compatibility tests, migration where applicable,
+  documentation, and a CHANGELOG entry. Internal Rust APIs remain unstable.
+
+## Agent-assisted contributions
+
+Coding-agent assistance is welcome. If an agent materially helped produce a
+pull request, disclose that briefly in the PR; tool names and prompt transcripts
+are not required. The human contributor remains responsible for understanding,
+testing, licensing, and defending every change. Agent-assisted work is held to
+the same correctness, security, compatibility, and documentation standards as
+any other contribution.
+
+Unsolicited autonomous bot pull requests are not accepted unless maintainers
+approved that integration in advance. A maintainer may ask the human author to
+explain the design, safety invariants, or failure behavior before merging.
 
 ## Before you push
 
@@ -65,12 +86,25 @@ on the issue to claim it; ask questions there — response SLA is ~48h.
 
 ## Releasing (maintainers)
 
-1. CI green on `main`; benches within budget (ADR-0010).
-2. `git cliff --tag vX.Y.Z` → review CHANGELOG.md.
-3. Tag `vX.Y.Z`; cargo-dist builds artifacts, installers, and the brew formula.
-4. Verify `brew install`, `curl | sh`, and the Windows zip on clean machines.
-5. Curate the GitHub release notes; publish crates in dependency order
-   (`core` → `vcs`/`tui` → `margin`).
+1. CI is green on `main`; benchmark smoke tests remain within their documented
+   budgets (ADR-0010).
+2. `git cliff --tag vX.Y.Z-rc.N` → review `CHANGELOG.md` and publish a release
+   candidate through cargo-dist.
+3. Verify Homebrew, installer-script, archive, completions, and man-page paths
+   from release artifacts on clean macOS, Linux, and Windows environments.
+4. Run the release's documented beta scenario. For v0.6, record at least five
+   independent testers and allow at least seven days without an unresolved
+   critical or high-impact defect.
+5. During the candidate period, merge only fixes and documentation. Restart the
+   bake period when a high-impact fix changes runtime behavior.
+6. Publish in dependency order (`margin-core`, `margin-vcs`, `margin-tui`,
+   then `margin-review`) after every `cargo publish --dry-run` succeeds.
+7. Tag stable `vX.Y.Z`, verify the generated Homebrew formula, and curate the
+   GitHub release notes.
+
+The executable package is `margin-review`; the installed command remains
+`margin`. The crates.io package named `margin` belongs to an unrelated project
+and must never appear in Margin installation instructions (ADR-0025).
 
 ## Licensing of contributions
 
