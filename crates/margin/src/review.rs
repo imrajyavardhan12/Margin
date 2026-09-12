@@ -16,7 +16,7 @@ use margin_vcs::{
 };
 
 use crate::config::Config;
-use crate::{notes, viewed};
+use crate::review_state::{LoadedReviewState, ReviewStore};
 
 /// Presentation and behavior settings shared by every Review Session.
 pub(crate) struct ReviewOptions {
@@ -131,8 +131,7 @@ impl<'a> ReviewSession<'a> {
                     options,
                     None,
                     None,
-                    Vec::new(),
-                    Vec::new(),
+                    LoadedReviewState::default(),
                     &mut executor,
                 )
             }
@@ -174,15 +173,10 @@ fn run_reloadable(
     };
 
     let diff_id = source.id().0;
-    let viewed_store = viewed::ViewedStore::open(diff_id.clone());
-    let viewed_entries = viewed_store
-        .as_ref()
-        .map(viewed::ViewedStore::load)
-        .unwrap_or_default();
-    let notes_store = notes::NotesStore::open(diff_id);
-    let note_entries = notes_store
-        .as_ref()
-        .map(notes::NotesStore::load)
+    let mut review_store = ReviewStore::open(diff_id);
+    let persisted: LoadedReviewState = review_store
+        .as_mut()
+        .map(ReviewStore::load)
         .unwrap_or_default();
 
     // The watcher must remain alive through `show`; dropping it stops events.
@@ -206,8 +200,7 @@ fn run_reloadable(
     let live = LiveReview {
         source,
         persistence: Persistence {
-            viewed: viewed_store,
-            notes: notes_store,
+            store: review_store,
         },
     };
     let mut executor = match mode {
@@ -229,24 +222,19 @@ fn run_reloadable(
         options,
         staged,
         watch_handle.as_deref(),
-        viewed_entries,
-        note_entries,
+        persisted,
         &mut executor,
     )
 }
 
 struct Persistence {
-    viewed: Option<viewed::ViewedStore>,
-    notes: Option<notes::NotesStore>,
+    store: Option<ReviewStore>,
 }
 
 impl Persistence {
     #[cfg(test)]
     const fn none() -> Self {
-        Self {
-            viewed: None,
-            notes: None,
-        }
+        Self { store: None }
     }
 }
 
@@ -374,20 +362,17 @@ impl CommandExecutor for ReviewExecutor<'_> {
                     Err(err) => CommandResult::Failed(err.to_string()),
                 }
             }
-            Command::SaveViewed { entries } => {
-                if let Some(store) = self
-                    .live()
-                    .and_then(|live| live.persistence.viewed.as_ref())
-                {
-                    let _ = store.save(&entries);
+            Command::SaveReviewState { viewed, notes } => {
+                if let Some(store) = self.live().and_then(|live| live.persistence.store.as_ref()) {
+                    match store.save(&viewed, &notes) {
+                        Ok(()) => CommandResult::Done,
+                        Err(err) => CommandResult::Failed(format!(
+                            "review state not saved ({err}); marks and notes are session-only"
+                        )),
+                    }
+                } else {
+                    CommandResult::Done
                 }
-                CommandResult::Done
-            }
-            Command::SaveNotes { entries } => {
-                if let Some(store) = self.live().and_then(|live| live.persistence.notes.as_ref()) {
-                    let _ = store.save(&entries);
-                }
-                CommandResult::Done
             }
             Command::Reload => {
                 let Some(source) = self.source() else {
@@ -459,8 +444,7 @@ fn show(
     options: &ReviewOptions,
     staged: Option<margin_tui::StagedFiles>,
     watch: Option<&margin_tui::WatchHandle>,
-    viewed: Vec<(Vec<u8>, u64)>,
-    review_notes: Vec<(Vec<u8>, u64, String)>,
+    persisted: LoadedReviewState,
     executor: &mut dyn CommandExecutor,
 ) -> ExitCode {
     if options.json {
@@ -476,7 +460,10 @@ fn show(
         }
     }
     if options.notes {
-        print!("{}", margin_core::notes_markdown(&changeset, &review_notes));
+        print!(
+            "{}",
+            margin_core::notes_markdown(&changeset, &persisted.notes)
+        );
         return ExitCode::SUCCESS;
     }
     if !std::io::stdout().is_terminal() {
@@ -488,8 +475,12 @@ fn show(
     state.apply_theme(options.theme.clone());
     state.set_layout_mode(options.config.layout.into());
     state.set_collapse_globs(options.config.collapse.clone());
-    state.set_viewed(viewed);
-    state.set_notes(review_notes);
+    state.set_viewed(persisted.viewed);
+    state.set_notes(persisted.notes);
+    // Persistence is a convenience, never a blocker: a damaged or
+    // foreign record starts the review anyway, with the reason visible
+    // until the next keypress.
+    state.status_message = persisted.warning;
     state.staged = staged;
     state.watching = watch.is_some();
     match margin_tui::run(&mut state, executor, watch, options.config.mouse) {

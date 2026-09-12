@@ -13,9 +13,8 @@
 //! (1 is reserved for "displayed with errors".)
 
 mod config;
-mod notes;
 mod review;
-mod viewed;
+mod review_state;
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
