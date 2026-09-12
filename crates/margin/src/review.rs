@@ -12,7 +12,8 @@ use margin_core::{Changeset, FileStatus};
 use margin_tui::theme::Theme;
 use margin_tui::{AppState, Command, CommandExecutor, CommandResult};
 use margin_vcs::{
-    apply_patch_to_index, apply_patch_to_worktree, write_trash, DiffSource, StageError,
+    apply_patch_to_index, discard_hunk, DiffSource, DiscardError, DiscardMode, DiscardOutcome,
+    StageError,
 };
 
 use crate::config::Config;
@@ -24,15 +25,23 @@ pub(crate) struct ReviewOptions {
     theme: Theme,
     json: bool,
     notes: bool,
+    discard_without_backup: bool,
 }
 
 impl ReviewOptions {
-    pub(crate) fn new(config: Config, theme: Theme, json: bool, notes: bool) -> Self {
+    pub(crate) fn new(
+        config: Config,
+        theme: Theme,
+        json: bool,
+        notes: bool,
+        discard_without_backup: bool,
+    ) -> Self {
         Self {
             config,
             theme,
             json,
             notes,
+            discard_without_backup,
         }
     }
 
@@ -46,6 +55,10 @@ impl ReviewOptions {
 
     pub(crate) fn discard_backups(&self) -> bool {
         self.config.discard_trash
+    }
+
+    pub(crate) fn discard_without_backup(&self) -> bool {
+        self.discard_without_backup
     }
 }
 
@@ -75,8 +88,37 @@ enum ReloadableMode {
     Worktree {
         repo: PathBuf,
         watch: bool,
+        /// Config-level intent (`discard_trash`); the invocation flag in
+        /// `ReviewOptions` refines it into a `DiscardMode` at startup.
         backup_discards: bool,
     },
+}
+
+/// Resolve the effective discard behavior for a worktree review
+/// (ADR-0017): backups are the default, `--discard-without-backup` opts
+/// out for this invocation only, and the deprecated persistent
+/// `discard_trash = false` still opts out but warns loudly on every
+/// invocation until its removal. Returns the transaction mode plus a
+/// startup warning, if any.
+pub(crate) fn resolve_discard(
+    config_backups: bool,
+    flag_unbacked: bool,
+) -> (DiscardMode, Option<String>) {
+    if flag_unbacked {
+        (DiscardMode::SkipBackup, None)
+    } else if config_backups {
+        (DiscardMode::BackUp, None)
+    } else {
+        (
+            DiscardMode::SkipBackup,
+            Some(
+                "discard_trash = false is deprecated and will be removed: discards in this \
+                 review have NO backup and cannot be undone — pass --discard-without-backup \
+                 per invocation instead"
+                    .to_string(),
+            ),
+        )
+    }
 }
 
 impl<'a> ReviewSession<'a> {
@@ -131,7 +173,12 @@ impl<'a> ReviewSession<'a> {
                     options,
                     None,
                     None,
-                    LoadedReviewState::default(),
+                    Startup {
+                        persisted: LoadedReviewState::default(),
+                        discard_warning: None,
+                        // Snapshots cannot discard; the safe default.
+                        discard_backup: true,
+                    },
                     &mut executor,
                 )
             }
@@ -203,26 +250,45 @@ fn run_reloadable(
             store: review_store,
         },
     };
+    // Resolve the effective discard behavior now: backups by default, the
+    // invocation-only escape hatch on request, and a loud warning for the
+    // deprecated persistent opt-out — it can never be silently inherited
+    // (ADR-0017).
+    let mut discard_warning = None;
     let mut executor = match mode {
         ReloadableMode::ReadOnly => ReviewExecutor::ReadOnly(live),
         ReloadableMode::Staged { repo, .. } => ReviewExecutor::Staged { live, repo },
         ReloadableMode::Worktree {
             repo,
-            backup_discards,
+            backup_discards: config_backups,
             ..
-        } => ReviewExecutor::Worktree {
-            live,
-            repo,
-            backup_discards,
-        },
+        } => {
+            let (discard, warning) =
+                resolve_discard(config_backups, options.discard_without_backup());
+            discard_warning = warning;
+            ReviewExecutor::Worktree {
+                live,
+                repo,
+                discard,
+            }
+        }
     };
     let staged = executor.staged_summary();
+    // The prompt states the consequence before anything is typed; only a
+    // worktree review can discard, so anything else keeps the safe default.
+    let discard_backup = executor
+        .discard_target()
+        .is_none_or(|(_, _, mode)| mode == DiscardMode::BackUp);
     show(
         changeset,
         options,
         staged,
         watch_handle.as_deref(),
-        persisted,
+        Startup {
+            persisted,
+            discard_warning,
+            discard_backup,
+        },
         &mut executor,
     )
 }
@@ -253,7 +319,7 @@ enum ReviewExecutor<'a> {
     Worktree {
         live: LiveReview<'a>,
         repo: PathBuf,
-        backup_discards: bool,
+        discard: DiscardMode,
     },
 }
 
@@ -280,13 +346,13 @@ impl ReviewExecutor<'_> {
         }
     }
 
-    fn discard_target(&self) -> Option<(&Path, &dyn DiffSource, bool)> {
+    fn discard_target(&self) -> Option<(&Path, &dyn DiffSource, DiscardMode)> {
         match self {
             Self::Worktree {
                 live,
                 repo,
-                backup_discards,
-            } => Some((repo, live.source, *backup_discards)),
+                discard,
+            } => Some((repo, live.source, *discard)),
             Self::Snapshot | Self::ReadOnly(_) | Self::Staged { .. } => None,
         }
     }
@@ -325,41 +391,31 @@ impl CommandExecutor for ReviewExecutor<'_> {
                 }
             }
             Command::DiscardHunk { backup, patch } => {
-                let Some((repo, source, backup_discards)) = self.discard_target() else {
+                let Some((repo, source, mode)) = self.discard_target() else {
                     return CommandResult::Unsupported("discard needs a git worktree review");
                 };
-                // ADR-0014: nothing is destroyed before a copy exists.
-                let trash_entry = if backup_discards {
-                    match write_trash(repo, &backup) {
-                        Ok(path) => Some(path),
-                        Err(err) => {
-                            return CommandResult::Failed(format!(
-                                "discard aborted, backup failed: {err}"
-                            ));
-                        }
+                // One recoverable transaction owns backup, preflight,
+                // apply, and failure handling (ADR-0014, issue #96); the
+                // outcome is reported verbatim, never reinterpreted.
+                let outcome = match discard_hunk(repo, &backup, &patch, mode) {
+                    Ok(outcome) => outcome,
+                    Err(DiscardError::Stale(_)) => {
+                        return CommandResult::Stale(margin_tui::HunkAction::Discard);
                     }
-                } else {
-                    None
+                    Err(err) => return CommandResult::Failed(err.to_string()),
                 };
-                match apply_patch_to_worktree(repo, &patch) {
-                    Ok(()) => match source.load() {
-                        Ok(changeset) => CommandResult::Discarded {
-                            changeset,
-                            staged: self.staged_summary(),
-                            backed_up: trash_entry.is_some(),
+                match source.load() {
+                    Ok(changeset) => CommandResult::Discarded {
+                        changeset,
+                        staged: self.staged_summary(),
+                        recovery: match outcome {
+                            DiscardOutcome::BackedUp => margin_tui::DiscardRecovery::BackedUp,
+                            DiscardOutcome::Unbacked => margin_tui::DiscardRecovery::Unbacked,
                         },
-                        Err(err) => {
-                            CommandResult::Failed(format!("discarded, but reload failed: {err}"))
-                        }
                     },
-                    Err(StageError::Stale(_)) => {
-                        // A refused dry run changed nothing; remove its orphan backup.
-                        if let Some(path) = trash_entry {
-                            let _ = std::fs::remove_file(path);
-                        }
-                        CommandResult::Stale(margin_tui::HunkAction::Discard)
+                    Err(err) => {
+                        CommandResult::Failed(format!("discarded, but reload failed: {err}"))
                     }
-                    Err(err) => CommandResult::Failed(err.to_string()),
                 }
             }
             Command::SaveReviewState { viewed, notes } => {
@@ -439,12 +495,21 @@ fn load_staged(repo: &Path) -> margin_tui::StagedFiles {
         .unwrap_or_default()
 }
 
+/// Everything a review needs beyond the changeset itself: recovered
+/// review state, the discard consequence to promise in the prompt, and
+/// any startup notices to show without blocking the review.
+struct Startup {
+    persisted: LoadedReviewState,
+    discard_warning: Option<String>,
+    discard_backup: bool,
+}
+
 fn show(
     changeset: Changeset,
     options: &ReviewOptions,
     staged: Option<margin_tui::StagedFiles>,
     watch: Option<&margin_tui::WatchHandle>,
-    persisted: LoadedReviewState,
+    startup: Startup,
     executor: &mut dyn CommandExecutor,
 ) -> ExitCode {
     if options.json {
@@ -462,7 +527,7 @@ fn show(
     if options.notes {
         print!(
             "{}",
-            margin_core::notes_markdown(&changeset, &persisted.notes)
+            margin_core::notes_markdown(&changeset, &startup.persisted.notes)
         );
         return ExitCode::SUCCESS;
     }
@@ -475,12 +540,18 @@ fn show(
     state.apply_theme(options.theme.clone());
     state.set_layout_mode(options.config.layout.into());
     state.set_collapse_globs(options.config.collapse.clone());
-    state.set_viewed(persisted.viewed);
-    state.set_notes(persisted.notes);
-    // Persistence is a convenience, never a blocker: a damaged or
-    // foreign record starts the review anyway, with the reason visible
-    // until the next keypress.
-    state.status_message = persisted.warning;
+    state.set_viewed(startup.persisted.viewed);
+    state.set_notes(startup.persisted.notes);
+    // Startup notices are conveniences, never blockers: a damaged review
+    // record or a deprecated discard opt-out starts the review anyway,
+    // with the reasons visible until the next keypress.
+    state.status_message = match (startup.persisted.warning, startup.discard_warning) {
+        (Some(first), Some(second)) => Some(format!("{first} — {second}")),
+        (warning, None) | (None, warning) => warning,
+    };
+    // The prompt states the consequence before anything is typed
+    // (ADR-0017); only a worktree review can discard.
+    state.discard_backup = startup.discard_backup;
     state.staged = staged;
     state.watching = watch.is_some();
     match margin_tui::run(&mut state, executor, watch, options.config.mouse) {
@@ -581,6 +652,7 @@ impl ReviewCapabilities {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use std::cell::Cell;
 
     use margin_core::Changeset;
@@ -610,6 +682,41 @@ mod tests {
         fn id(&self) -> DiffId {
             DiffId("test:counting".into())
         }
+    }
+
+    #[test]
+    fn discard_policy_defaults_to_backups_with_no_warning() {
+        let (mode, warning) = resolve_discard(true, false);
+        assert_eq!(mode, DiscardMode::BackUp);
+        assert!(warning.is_none());
+    }
+
+    #[test]
+    fn discard_policy_flag_opts_out_for_this_invocation_only() {
+        let (mode, warning) = resolve_discard(true, true);
+        assert_eq!(mode, DiscardMode::SkipBackup);
+        assert!(warning.is_none(), "an explicit choice needs no warning");
+    }
+
+    #[test]
+    fn discard_policy_deprecated_config_warns_every_time() {
+        // ADR-0017: the persistent opt-out still works until removal,
+        // but no invocation may silently inherit it.
+        let (mode, warning) = resolve_discard(false, false);
+        assert_eq!(mode, DiscardMode::SkipBackup);
+        let warning = warning.expect("deprecated opt-out must warn");
+        assert!(warning.contains("deprecated"), "{warning}");
+        assert!(warning.contains("--discard-without-backup"), "{warning}");
+    }
+
+    #[test]
+    fn discard_policy_flag_wins_over_deprecated_config() {
+        let (mode, warning) = resolve_discard(false, true);
+        assert_eq!(mode, DiscardMode::SkipBackup);
+        assert!(
+            warning.is_none(),
+            "explicit choice supersedes the legacy setting"
+        );
     }
 
     #[test]
@@ -667,7 +774,7 @@ mod tests {
         let mut worktree = ReviewExecutor::Worktree {
             live: live(&source),
             repo: PathBuf::from("not-a-repo"),
-            backup_discards: true,
+            discard: DiscardMode::BackUp,
         };
         assert!(matches!(
             worktree.execute(Command::Reload),

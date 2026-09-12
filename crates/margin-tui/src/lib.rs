@@ -33,8 +33,8 @@ pub mod theme;
 pub mod view;
 
 pub use app::{
-    update, AppState, Command, CommandExecutor, CommandResult, ConfirmState, HunkAction, Msg,
-    StagedFiles,
+    update, AppState, Command, CommandExecutor, CommandResult, ConfirmState, DiscardRecovery,
+    HunkAction, Msg, StagedFiles,
 };
 pub use runtime::{run, WatchHandle};
 pub use view::view as render_view;

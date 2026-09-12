@@ -34,6 +34,9 @@ mouse = true               # wheel scroll + click in the TUI; false keeps the
                            # terminal's own text selection (`--no-mouse` too)
 discard_trash = true       # back up discarded hunks to .git/margin/trash/
                            # before applying (ADR-0014); `margin undo` restores
+                           # DEPRECATED (ADR-0017): `false` still opts out
+                           # until removal, but every invocation warns — use
+                           # `--discard-without-backup` per invocation instead
 collapse = []              # globs to auto-collapse (za expands), on top of
                            # built-in lockfile/generated heuristics; `*` stays
                            # within a path segment, `**` crosses, `?` is one
@@ -52,6 +55,12 @@ Margin *does*, only how it looks. (`collapse` qualifies: folding hides no
 content permanently — `za` reopens anything.) Behavior keys in a repo
 config are an error — in particular, a checked-out repository can never
 disable discard backups.
+
+The user-level `discard_trash = false` opt-out is deprecated (ADR-0017):
+it still applies until removal, but Margin warns on every invocation and
+the confirmation prompt states that recovery is unavailable. To discard
+without a recovery copy, pass `--discard-without-backup` for that
+invocation instead — the choice is never stored.
 
 ## Environment
 

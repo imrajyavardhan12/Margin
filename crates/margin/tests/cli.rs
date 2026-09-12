@@ -94,6 +94,31 @@ fn outside_a_repo_exits_2_with_a_clear_message() {
 }
 
 #[test]
+fn discard_escape_hatch_is_invocation_only_and_documented() {
+    // ADR-0017: the unbacked path is an explicit per-invocation flag,
+    // never configuration. It must exist, and its help must state the
+    // scope (worktree reviews, this invocation, no recovery via undo).
+    let out = margin().args(["--help"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let help = String::from_utf8_lossy(&out.stdout);
+    assert!(help.contains("--discard-without-backup"), "{help}");
+    assert!(help.contains("Never stored in configuration"), "{help}");
+
+    // The deprecated persistent opt-out still parses (removal comes
+    // later); behavior + warnings are covered by unit tests.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "discard_trash = false\n").unwrap();
+    let out = margin()
+        .env("MARGIN_CONFIG", dir.path().join("config.toml"))
+        .arg("--dump-config")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let dump = String::from_utf8_lossy(&out.stdout);
+    assert!(dump.contains("discard_trash = false"), "{dump}");
+}
+
+#[test]
 fn usage_errors_exit_2() {
     // clap's standard usage-error exit code, promised by ADR-0007.
     let out = margin().args(["frobnicate"]).output().unwrap();
