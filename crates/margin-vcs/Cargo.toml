@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["git", "diff"]
+categories = ["development-tools"]
 
 [dependencies]
 margin-core.workspace = true
