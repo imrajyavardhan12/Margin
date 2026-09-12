@@ -66,6 +66,11 @@ jobs:
             (cd "$dir" && shasum -a 256 -c "$base.sha256")
           fi
           rm -rf smoke-prefix && mkdir smoke-prefix
+          # Git-Bash tar is a native build: a `D:\…` path reads as a
+          # remote host. POSIX-ize drive-letter paths for tar only.
+          case "$archive" in
+            [A-Za-z]:*) archive=$(cygpath -u "$archive") ;;
+          esac
           tar -xf "$archive" -C smoke-prefix
           echo "PREFIX=$PWD/smoke-prefix/$(basename "$archive" | sed -E 's/\.(tar\.xz|zip)$//')" >> "$GITHUB_ENV"
       # Every check below runs the *packaged* binary from the clean
