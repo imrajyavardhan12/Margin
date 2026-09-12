@@ -15,7 +15,7 @@ margin (bin) ──► margin-tui ──► margin-core
 | `margin-core` | Diff model, unified-diff parser, intra-line diff, collapse heuristics | **No** | Pure, panic-free on untrusted input, fuzzed (ADR-0003, 0009) |
 | `margin-vcs` | Read-only `DiffSource` adapters + repository write operations | Yes — VCS, files, `gh` | git2 quarantined; no git2 types in public APIs (ADR-0005, 0019) |
 | `margin-tui` | Elm-architecture UI: `AppState`, `Msg`, `update`, `view`, themes, keymap | Terminal only (review effects → `Command`) | Never imports `margin-vcs`; `view()` is pure → snapshot-testable (ADR-0002, 0003) |
-| `margin` | CLI, config, capability-aware Review Session, persistence, watching | Yes — runtime shell | Pager passthrough guarantee; exit codes are API (ADR-0007, 0019) |
+| `margin` | CLI, config, capability-aware Review Session, persistence, watching | Yes — runtime shell | Pager passthrough guarantee; exit codes are API (ADR-0007, 0019, 0022) |
 
 ## Data flow
 

@@ -416,6 +416,10 @@ pub struct AppState {
     /// Watch mode (`-w`): the status bar shows `[watch]` and the runtime
     /// feeds debounced reloads. Set by the binary at startup.
     pub watching: bool,
+    /// Whether a write, reload, or persistence failure was shown during
+    /// this session (ADR-0022). Review continues regardless; the runtime
+    /// reports it so the process exits 1 on quit.
+    pub session_had_failure: bool,
     /// Whether discards in this review persist a recovery copy (ADR-0014,
     /// ADR-0017). The confirmation prompt states the consequence, so an
     /// unbacked review can never look like a recoverable one. Set by the
@@ -465,6 +469,7 @@ impl AppState {
             confirm: None,
             note: None,
             watching: false,
+            session_had_failure: false,
             discard_backup: true,
             fold: std::collections::HashMap::new(),
             viewed: std::collections::HashMap::new(),
@@ -1068,7 +1073,12 @@ impl AppState {
             }
             CommandResult::Unsupported(why) => self.status_message = Some(why.into()),
             CommandResult::Done => {}
-            CommandResult::Failed(err) => self.status_message = Some(format!("failed: {err}")),
+            CommandResult::Failed(err) => {
+                // ADR-0022: review continues, but the process exits 1 —
+                // the failure was shown, so it must not vanish silently.
+                self.session_had_failure = true;
+                self.status_message = Some(format!("failed: {err}"));
+            }
         }
     }
 
@@ -1801,6 +1811,29 @@ mod tests {
             panic!("expected line row");
         };
         assert_eq!((old_no, new_no), (None, Some(2)), "addition: new side only");
+    }
+
+    /// ADR-0022: a shown failure marks the session for exit 1 without
+    /// ending the review; benign outcomes leave the flag clear.
+    #[test]
+    fn failed_commands_mark_the_session_without_ending_review() {
+        let mut state = sample();
+        assert!(!state.session_had_failure);
+        assert!(!state.should_quit);
+
+        update(&mut state, Msg::CommandFinished(CommandResult::Done));
+        assert!(!state.session_had_failure, "clean writes stay clean");
+
+        update(
+            &mut state,
+            Msg::CommandFinished(CommandResult::Failed("disk full".into())),
+        );
+        assert!(state.session_had_failure, "shown failure is recorded");
+        assert!(!state.should_quit, "review continues regardless");
+        assert!(
+            state.status_message.is_some(),
+            "the developer was told, so exit 1 is honest"
+        );
     }
 
     #[test]

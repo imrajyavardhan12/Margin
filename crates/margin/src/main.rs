@@ -260,7 +260,7 @@ fn main() -> ExitCode {
                 Ok(source) => ReviewSession::read_only(&source).run(&session),
                 Err(err) => {
                     eprintln!("margin: {err}");
-                    ExitCode::from(2)
+                    ExitCode::from(1)
                 }
             }
         }
@@ -277,40 +277,40 @@ fn run_man() -> ExitCode {
     let mut page = Vec::new();
     if let Err(err) = clap_mangen::Man::new(Cli::command()).render(&mut page) {
         eprintln!("margin: cannot render man page: {err}");
-        return ExitCode::from(2);
+        return ExitCode::from(1);
     }
     write_stdout(&page)
 }
 
-/// Write generated text to stdout. A closed pipe (`| head`, a pager
-/// quitting) is normal use, not an error; anything else is exit 2.
-fn write_stdout(bytes: &[u8]) -> ExitCode {
+/// Write text to stdout. A closed pipe (`| head`, a pager quitting) is
+/// normal use, not an error — every piped document path funnels through
+/// here so an ordinary broken pipe exits 0 instead of panicking 101
+/// (ADR-0022). Anything else is operational (exit 1, not misuse).
+pub(crate) fn write_stdout(bytes: &[u8]) -> ExitCode {
     match std::io::stdout().write_all(bytes) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("margin: {err}");
-            ExitCode::from(2)
+            ExitCode::from(1)
         }
     }
 }
 
 /// `margin undo`: restore the newest trash entry to the working tree.
-/// Empty trash and stale entries exit 2 with the reason (ADR-0007); a
-/// stale entry is kept and its path printed for hand-recovery.
+/// Empty trash and stale entries exit 1 with the reason (ADR-0022:
+/// valid invocation, uncooperative world); a stale entry is kept and
+/// its path printed for hand-recovery.
 fn run_undo() -> ExitCode {
     let cwd = match working_dir() {
         Ok(dir) => dir,
         Err(code) => return code,
     };
     match undo_last_discard(&cwd) {
-        Ok(path) => {
-            println!("restored {}", path.display());
-            ExitCode::SUCCESS
-        }
+        Ok(path) => write_stdout(format!("restored {}\n", path.display()).as_bytes()),
         Err(err) => {
             eprintln!("margin: {err}");
-            ExitCode::from(2)
+            ExitCode::from(1)
         }
     }
 }
@@ -397,7 +397,7 @@ fn run_patch(input: &str, session: &ReviewOptions) -> ExitCode {
         let mut buf = Vec::new();
         if let Err(err) = std::io::stdin().lock().read_to_end(&mut buf) {
             eprintln!("margin: cannot read stdin: {err}");
-            return ExitCode::from(2);
+            return ExitCode::from(1);
         }
         buf
     } else {
@@ -432,7 +432,15 @@ fn run_patch(input: &str, session: &ReviewOptions) -> ExitCode {
     let warnings = outcome.warnings;
     let code = ReviewSession::snapshot(outcome.changeset).run(session);
     report_warnings(&warnings);
-    code
+    // ADR-0022: usable output with warnings exits 1. A failure inside
+    // the session already reports its own code; only a clean run is
+    // downgraded — warnings must never mask a quiet success into one,
+    // nor upgrade anything else.
+    if !warnings.is_empty() && code == ExitCode::SUCCESS {
+        ExitCode::from(1)
+    } else {
+        code
+    }
 }
 
 /// Surface parse anomalies after the TUI closes (never swallowed, ADR-0009).
@@ -449,6 +457,6 @@ fn report_warnings(warnings: &[ParseWarning]) {
 fn working_dir() -> Result<PathBuf, ExitCode> {
     std::env::current_dir().map_err(|err| {
         eprintln!("margin: cannot determine working directory: {err}");
-        ExitCode::from(2)
+        ExitCode::from(1)
     })
 }
