@@ -20,3 +20,11 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "aarch64-unknown
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Pinned GitHub Actions for the generated release.yml (ADR-0024): dist
+# emits these SHAs verbatim, so regeneration preserves immutability and
+# `dist plan` stays green. Bump the SHAs here (never in release.yml)
+# when Dependabot-worthy action releases land.
+[dist.github-action-commits]
+"actions/checkout" = "d23441a48e516b6c34aea4fa41551a30e30af803"
+"actions/upload-artifact" = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+"actions/download-artifact" = "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"

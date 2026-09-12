@@ -78,6 +78,38 @@ cargo test --workspace
 CI runs exactly these (plus cargo-deny and a 3-OS matrix), so green locally
 means green remotely, minus OS quirks.
 
+## Supply chain (every contributor)
+
+Every GitHub Action in `.github/workflows/` is pinned to a full commit
+SHA with a readable version comment (ADR-0024), e.g.
+`actions/checkout@<40-hex> # v6`. Dependabot reads that format and
+proposes SHA+comment updates like any other dependency bump — prefer
+its PRs over hand-editing pins.
+
+Rules enforced by the `action pins + lint` CI job (a required check):
+
+- No mutable action reference (`@v6`, `@stable`, branch names) merges.
+- Every pinned action keeps its version comment.
+- `actionlint` passes on the four hand-written workflows.
+
+Exceptions, by design:
+
+- `dtolnay/rust-toolchain` has no version tags, so its `stable` /
+  `master` / `nightly` installer refs are pinned to branch SHAs that
+  Dependabot cannot follow — re-pin by hand when the installer needs
+  it. The installed *toolchain* still floats by intent (`stable`,
+  `nightly`, explicit `1.85` for MSRV).
+- `release.yml` is generated: never hand-edit it. Its pins come from
+  `[dist.github-action-commits]` in `dist-workspace.toml`, which
+  `cargo dist generate` emits verbatim — so re-pinning it means
+  updating the SHAs there and regenerating. `dist plan` (a required
+  check) fails if the file drifts from what dist would emit, and the
+  SHA check enforces pins on the generated output too. Generated
+  lines carry no version comments (dist emits none); the SHAs in
+  `dist-workspace.toml` are the readable record.
+- `actionlint` skips `release.yml` (dist's shell style is upstream's
+  to fix); the linter binary itself is a pinned download, like mdBook.
+
 ## What makes a good first PR
 
 Issues labeled [`good first issue`](../../labels/good%20first%20issue) are
