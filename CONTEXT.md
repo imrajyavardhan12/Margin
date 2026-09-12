@@ -16,6 +16,14 @@ _Avoid_: Patch, diff
 A developer’s evaluation of a **Changeset** before deciding which changes to keep.
 _Avoid_: Diff viewing, code browsing
 
+**Review source**:
+The identified origin that supplies the current **Changeset** for review.
+_Avoid_: `DiffSource`, input adapter
+
+**Review Session**:
+One continuous interaction in which a developer reviews a single **Review source**.
+_Avoid_: Runtime, screen, invocation
+
 **Viewed mark**:
 An acknowledgement that the current reviewable content of a file has been examined.
 _Avoid_: Approval, completion
@@ -30,7 +38,9 @@ _Avoid_: Session, cache, preferences
 
 ## Relationships
 
-- A **Review** evaluates exactly one **Changeset** at a time.
+- A **Review Session** is bound to exactly one **Review source**.
+- A **Review source** supplies one current **Changeset**, which may change when reloaded.
+- A **Review** evaluates exactly one current **Changeset** at a time.
 - A **Changeset** contains zero or more files with reviewable content.
 - A file can have one **Viewed mark** for its current reviewable content.
 - A hunk can have zero or one **Review note** during a **Review**.
