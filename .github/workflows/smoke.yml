@@ -66,12 +66,26 @@ jobs:
             (cd "$dir" && shasum -a 256 -c "$base.sha256")
           fi
           rm -rf smoke-prefix && mkdir smoke-prefix
-          # Git-Bash tar is a native build: a `D:\…` path reads as a
-          # remote host. POSIX-ize drive-letter paths for tar only.
           case "$archive" in
-            [A-Za-z]:*) archive=$(cygpath -u "$archive") ;;
+            *.zip)
+              # Git-Bash tar is GNU tar without zip support; the
+              # Windows archive unpacks via Expand-Archive instead.
+              # (PowerShell needs a Windows path, not POSIX.)
+              case "$archive" in
+                [A-Za-z]:*) winarchive=$(cygpath -w "$archive") ;;
+                *) winarchive="$archive" ;;
+              esac
+              powershell -NoProfile -Command "Expand-Archive -Path '$winarchive' -DestinationPath 'smoke-prefix'"
+              ;;
+            *)
+              # Native tar mishandles `D:\…` as a remote host:
+              # POSIX-ize drive-letter paths first.
+              case "$archive" in
+                [A-Za-z]:*) archive=$(cygpath -u "$archive") ;;
+              esac
+              tar -xf "$archive" -C smoke-prefix
+              ;;
           esac
-          tar -xf "$archive" -C smoke-prefix
           echo "PREFIX=$PWD/smoke-prefix/$(basename "$archive" | sed -E 's/\.(tar\.xz|zip)$//')" >> "$GITHUB_ENV"
       # Every check below runs the *packaged* binary from the clean
       # prefix — never target/, never PATH.
