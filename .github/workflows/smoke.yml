@@ -1,0 +1,138 @@
+# Installable-artifact smoke (issue #101): prove what users download
+# actually works, starting from packaged output — never target/.
+#
+# Runs on PRs and main. All jobs are required checks: a red smoke blocks
+# the release candidate, it is never informational.
+name: Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Manual re-runs for release-candidate validation.
+  workflow_dispatch:
+
+# Least privilege (ADR-0024): checkout, build, and upload test logs only.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      # Same installer the release workflow uses, same pinned dist
+      # version as dist-workspace.toml (`cargo-dist-version`).
+      - name: Install dist
+        run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.32.0/cargo-dist-installer.sh | sh"
+      # Host archive only: cross targets need zigbuild/xwin and belong to
+      # the tag-triggered release workflow, not to every PR.
+      - name: Build host archive with dist
+        run: |
+          dist build --target=${{ matrix.target }} --artifacts=local --output-format=json > dist-manifest.json
+          echo "dist ran successfully"
+          dist print-upload-files-from-manifest --manifest dist-manifest.json > upload-files.txt
+          cat upload-files.txt
+      - name: Verify checksum and unpack to a clean prefix
+        run: |
+          archive=$(grep -E '\.tar\.xz$|\.zip$' upload-files.txt | head -n 1)
+          test -n "$archive" || { echo "no archive in manifest"; exit 1; }
+          echo "archive=$archive"
+          test -f "$archive.sha256" || { echo "no checksum sidecar for $archive"; exit 1; }
+          dir=$(dirname "$archive")
+          base=$(basename "$archive")
+          if command -v sha256sum >/dev/null; then
+            (cd "$dir" && sha256sum -c "$base.sha256")
+          else
+            (cd "$dir" && shasum -a 256 -c "$base.sha256")
+          fi
+          rm -rf smoke-prefix && mkdir smoke-prefix
+          case "$archive" in
+            *.zip)
+              # Git-Bash tar is GNU tar without zip support; the
+              # Windows archive unpacks via Expand-Archive instead.
+              # (PowerShell needs a Windows path, not POSIX.)
+              case "$archive" in
+                [A-Za-z]:*) winarchive=$(cygpath -w "$archive") ;;
+                *) winarchive="$archive" ;;
+              esac
+              powershell -NoProfile -Command "Expand-Archive -Path '$winarchive' -DestinationPath 'smoke-prefix'"
+              ;;
+            *)
+              # Native tar mishandles `D:\…` as a remote host:
+              # POSIX-ize drive-letter paths first.
+              case "$archive" in
+                [A-Za-z]:*) archive=$(cygpath -u "$archive") ;;
+              esac
+              tar -xf "$archive" -C smoke-prefix
+              ;;
+          esac
+          # Locate (don't assume) the packaged binary: archive layouts
+          # differ per platform and dist version; exactly one margin
+          # binary ships per archive.
+          bin=$(find smoke-prefix -type f \( -name margin -o -name margin.exe \) | head -n 1)
+          test -n "$bin" || { echo "no margin binary under smoke-prefix:"; find smoke-prefix | head -n 20; exit 1; }
+          test -x "$bin" || { echo "packaged binary is not executable: $bin"; exit 1; }
+          echo "BIN=$PWD/$bin" >> "$GITHUB_ENV"
+          echo "PREFIX=$PWD/smoke-prefix/$(basename "$archive" | sed -E 's/\.(tar\.xz|zip)$//')" >> "$GITHUB_ENV"
+      # Every check below runs the *packaged* binary from the clean
+      # prefix — never target/, never PATH.
+      - name: Packaged binary reports its version
+        run: |
+          "$BIN" --version | grep -E '^margin [0-9]+\.[0-9]+\.[0-9]+'
+      - name: Piped patch, JSON, and worktree scenarios
+        run: |
+          patch=$(printf 'diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n')
+          # Piped `patch` passes through byte-identical (ADR-0007).
+          test "$(printf '%s' "$patch" | "$BIN" patch)" = "$patch"
+          # `--json` opts out of passthrough with a structured document.
+          printf '%s' "$patch" | "$BIN" patch --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['files'][0]['new_path']=='f.txt', d"
+          # Worktree review of a scratch repo prints the human summary.
+          rm -rf smoke-repo && mkdir smoke-repo && (cd smoke-repo && git init -q && git config user.email t@t && git config user.name t && printf 'one\ntwo\n' > f.txt && git add . && git commit -qm init && printf 'one\nTWO\n' > f.txt)
+          (cd smoke-repo && "$BIN" diff | grep -E '^M f\.txt')
+      - name: Completions and man page generate from the packaged binary
+        run: |
+          for shell in zsh bash fish powershell; do
+            "$BIN" completions "$shell" | grep -q . || { echo "empty $shell completions"; exit 1; }
+          done
+          "$BIN" man | grep -q '\.TH' || { echo "man page has no header"; exit 1; }
+      # The installer template must work into a throwaway prefix without
+      # privilege. This runs the published v0.5.1 script (the current
+      # template): v0.6+ scripts are the same template with new names,
+      # exercised for real at RC time.
+      - name: Installer script honors a clean prefix (unix)
+        if: runner.os != 'Windows'
+        run: |
+          tmp=$(mktemp -d)
+          curl -fsSL https://github.com/imrajyavardhan12/Margin/releases/download/v0.5.1/margin-installer.sh -o "$tmp/install.sh"
+          CARGO_HOME="$tmp/cargo-home" sh "$tmp/install.sh"
+          "$tmp/cargo-home/bin/margin" --version | grep -E '^margin 0\.5\.1$'
+
+  brew-install:
+    name: brew install from the tap
+    runs-on: macos-latest
+    steps:
+      # Installing through Homebrew proves the tap formula's version and
+      # checksums match the published artifacts: brew refuses mismatches.
+      - run: brew install imrajyavardhan12/tap/margin
+      - run: margin --version | grep -E '^margin [0-9]+\.[0-9]+\.[0-9]+'
+      - run: printf '--- a\n+++ b\n@@ -1,1 +1,1 @@\n-x\n+y\n' | margin patch --json | python3 -c "import json,sys; json.load(sys.stdin)"
