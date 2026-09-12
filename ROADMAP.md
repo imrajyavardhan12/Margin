@@ -31,24 +31,24 @@ v0.6 is feature-frozen. Its purpose is to make Margin safe and dependable
 before broader promotion; new VCS integrations and broad UI capabilities do
 not enter this release.
 
-Priorities:
+Priorities (status as the release candidate approaches):
 
-- Guarantee terminal restoration across every normal error and panic path.
-- Make discard backup, apply, cleanup, and reload behavior testable as one
+- [x] Guarantee terminal restoration across every normal error and panic path.
+- [x] Make discard backup, apply, cleanup, and reload behavior testable as one
   transaction.
-- Replace persistent unbacked discard with the explicit, invocation-only
+- [x] Replace persistent unbacked discard with the explicit, invocation-only
   escape hatch defined by ADR-0017.
-- Consolidate viewed marks and review notes into the versioned, atomic review
+- [x] Consolidate viewed marks and review notes into the versioned, atomic review
   state defined by ADR-0020, surfacing failures without interrupting review.
-- Implement and test the stable `0`/`1`/`2` outcome contract from ADR-0022.
-- Reconcile the README, architecture guide, crate documentation, ADR status,
+- [x] Implement and test the stable `0`/`1`/`2` outcome contract from ADR-0022.
+- [ ] Reconcile the README, architecture guide, crate documentation, ADR status,
   CLI help, and website with the shipped product.
-- Protect the main branch and migrate every GitHub Action to the enforced,
+- [x] Protect the main branch and migrate every GitHub Action to the enforced,
   least-privilege SHA-pinning policy in ADR-0024.
-- Publish the executable as the `margin-review` crates.io package while
-  preserving the `margin` command (ADR-0025).
-- Smoke-test supported installation paths and release artifacts.
-- Dogfood complete agent-assisted review sessions and collect external beta
+- [x] Prepare the executable as the `margin-review` crates.io package while
+  preserving the `margin` command (ADR-0025); publication happens at RC.
+- [x] Smoke-test supported installation paths and release artifacts.
+- [ ] Dogfood complete agent-assisted review sessions and collect external beta
   feedback before declaring the release stable.
 
 Architecture work belongs in v0.6 only when it directly improves a safety

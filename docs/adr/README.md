@@ -20,22 +20,25 @@ questions or, worse, silently unsettle them.
 
 ## Index
 
-| ADR | Title | Status |
-|---|---|---|
+Relationships (amended/superseded clauses) are noted here so no one
+trusts a stale sentence: the linked ADRs themselves are never rewritten.
+
+| ADR | Title | Status | Notes |
+|---|---|---|---
 | [0001](0001-rust.md) | Implementation language: Rust | Accepted |
 | [0002](0002-ratatui-crossterm.md) | TUI stack: ratatui + crossterm | Accepted |
 | [0003](0003-elm-architecture.md) | App pattern: Elm architecture with a pure core | Accepted |
-| [0004](0004-workspace-crates.md) | Four-crate workspace with one I/O seam | Accepted |
-| [0005](0005-git2-behind-trait.md) | Git access via git2, quarantined behind `DiffSource` | Accepted |
-| [0006](0006-syntect-similar.md) | Highlighting via syntect; intra-line diff via similar | Accepted |
-| [0007](0007-cli-design.md) | CLI mirrors Git verbs; pager passthrough guarantee | Accepted |
-| [0008](0008-config-toml.md) | Configuration: TOML, XDG + repo-local | Accepted |
+| [0004](0004-workspace-crates.md) | Four-crate workspace with one I/O seam | Accepted | I/O seam widened by [0019](0019-explicit-review-effect-seams.md) |
+| [0005](0005-git2-behind-trait.md) | Git access via git2, quarantined behind `DiffSource` | Accepted | `DiffSource` is the read-only seam; writes joined it via [0019](0019-explicit-review-effect-seams.md) |
+| [0006](0006-syntect-similar.md) | Highlighting via syntect; intra-line diff via similar | Accepted | Warming clause superseded by [0026](0026-no-background-highlight-warming.md) |
+| [0007](0007-cli-design.md) | CLI mirrors Git verbs; pager passthrough guarantee | Accepted | Exit-code wording superseded by [0022](0022-exit-code-semantics.md) |
+| [0008](0008-config-toml.md) | Configuration: TOML, XDG + repo-local | Accepted | Parity rule exempted for safety hatches by [0017](0017-unbacked-discard-escape-hatch.md) |
 | [0009](0009-error-handling.md) | Errors: thiserror in libs, anyhow at the edge, no panics | Accepted |
 | [0010](0010-testing-strategy.md) | Testing: snapshots, temp repos, corpus, fuzz, benches | Accepted |
-| [0011](0011-release-distribution.md) | Releases: cargo-dist, Conventional Commits, MSRV policy | Accepted |
+| [0011](0011-release-distribution.md) | Releases: cargo-dist, Conventional Commits, MSRV policy | Accepted | Package identity amended by [0025](0025-crates-io-package-identity.md) |
 | [0012](0012-license.md) | License: MIT OR Apache-2.0 | Accepted |
 | [0013](0013-hunk-staging-safety.md) | Hunk staging: index-only, dry-run first, exact bytes | Accepted |
-| [0014](0014-discard-safety.md) | Discard: trash before destroy, worktree-only, typed confirm | Accepted |
+| [0014](0014-discard-safety.md) | Discard: trash before destroy, worktree-only, typed confirm | Accepted | Persistent opt-out superseded by [0017](0017-unbacked-discard-escape-hatch.md) |
 | [0015](0015-forge-via-gh.md) | Forge access through the user's `gh` CLI, quarantined in margin-vcs | Accepted |
 | [0016](0016-completions-and-man-at-runtime.md) | Completions and the man page generate at runtime from the binary | Accepted |
 | [0017](0017-unbacked-discard-escape-hatch.md) | Unbacked discard is an explicit, per-invocation escape hatch | Accepted |

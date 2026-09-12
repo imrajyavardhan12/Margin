@@ -2,15 +2,16 @@
 //! session.
 //!
 //! Responsibilities (and nothing more — ADR-0004):
-//! 1. Parse the git-verb CLI (ADR-0007) and, later, config (ADR-0008).
+//! 1. Parse the git-verb CLI (ADR-0007) and merge configuration (ADR-0008).
 //! 2. Choose a `margin_vcs::DiffSource` (or read stdin/file bytes) from the
 //!    invocation.
 //! 3. Honor the passthrough guarantee: in `pager` and `patch` modes with a
 //!    non-TTY stdout, input bytes flow through byte-identical, exit 0.
 //! 4. Run the TUI on a terminal; print a plain summary when piped.
 //!
-//! Exit codes are an API (ADR-0007): 0 success, 2 usage/environment error.
-//! (1 is reserved for "displayed with errors".)
+//! Exit codes are an API (ADR-0007, ADR-0022): 0 clean completion,
+//! 1 operational failure or usable output with warnings, 2 invalid
+//! invocation or configuration.
 
 mod config;
 mod review;
@@ -33,7 +34,8 @@ use review::{ReviewOptions, ReviewSession};
     version,
     about = "A fast, keyboard-first terminal diff viewer",
     long_about = "Review Git changes, patches, and AI-authored code without leaving the terminal.\n\
-                  Run with no arguments to review the working tree (untracked files included)."
+                  Run with no arguments to review the working tree (untracked files included).",
+    after_help = "Exit status: 0 clean completion · 1 operational failure or usable output with warnings · 2 invalid invocation (ADR-0022)."
 )]
 struct Cli {
     #[command(subcommand)]

@@ -12,6 +12,12 @@ git show HEAD --format= | margin patch --json - | jq '.additions'
 `pager` mode never emits JSON: its piped output is byte-identical to its
 input by contract (ADR-0007). `--json` cannot combine with `--watch`.
 
+## Exit status
+
+`0` means a clean document; `1` means the document is usable but the
+parser warned (warnings go to stderr, never into the JSON). `2` means
+the invocation itself was invalid (ADR-0022).
+
 ## Stability
 
 The document carries `"schema": 1`. Within schema 1, changes are

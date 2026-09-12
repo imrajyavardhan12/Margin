@@ -36,7 +36,7 @@ Changeset → FileDiff (paths, status, mode) → Hunk (@@ ranges) → Line
                                                                  └ intra-line spans
 ```
 
-Everything downstream — rendering, search, `--json`, staging in v0.2 —
+Everything downstream — rendering, search, `--json`, staging —
 consumes this model. The parser that builds it from unified diffs is the
 single most security-sensitive code in the project (stdin is untrusted) and
 is correspondingly fuzzed and corpus-tested (ADR-0010).
@@ -64,9 +64,11 @@ runners cannot make statistically trustworthy timing decisions.
 - `margin-core`: `model.rs` (bytes-first changeset model), `patch.rs`
   (tolerant unified-diff parser), `intraline.rs` (word-level emphasis),
   `ansi.rs` (escape stripping for pager input)
-- `margin-vcs`: `lib.rs` (`DiffSource` trait + `SourceError`), `git.rs`
+- `margin-vcs`: `lib.rs` (`DiffSource` trait + `SourceError`, write
+  transactions), `git.rs`
   (worktree/staged/show/range sources + git2 conversion), `files.rs`
-  (two-file diffs)
+  (two-file diffs), `gh.rs` (PRs via the user's `gh`), `staging.rs`
+  (index writes), `discard.rs` (recoverable discard + trash + undo)
 - `margin-tui`: `app.rs` (`AppState`/`Msg`/`update`, per-layout `Row`
   stream), `keymap.rs`, `theme.rs` (built-ins + color modes),
   `highlight.rs` (budgeted lazy syntax/emphasis cache), `runtime.rs`
