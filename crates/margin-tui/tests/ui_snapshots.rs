@@ -481,7 +481,7 @@ fn discard_flow_requires_typed_yes() {
         Msg::CommandFinished(CommandResult::Discarded {
             changeset: reloaded,
             staged: None,
-            backed_up: true,
+            recovery: margin_tui::DiscardRecovery::BackedUp,
         }),
     );
     let frame = render(&mut state, 80, 24);
@@ -524,6 +524,21 @@ fn discard_cancels_and_refuses_safely() {
     assert!(state.confirm.is_none(), "unsafe path must not prompt");
     assert!(render(&mut state, 80, 24).contains("needs git quoting"));
 
+    // An unbacked review states the consequence before anything is typed
+    // (ADR-0017): the prompt warns recovery is unavailable.
+    let mut state = sample_state();
+    state.discard_backup = false;
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::DiscardHunk);
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("WITHOUT BACKUP"), "{frame}");
+    assert!(frame.contains("cannot be undone"), "{frame}");
+    assert!(
+        !frame.contains("margin undo"),
+        "no false recovery promise: {frame}"
+    );
+
     // Without a trash entry the success message says so.
     let mut state = sample_state();
     let reloaded = state.changeset.clone();
@@ -532,10 +547,12 @@ fn discard_cancels_and_refuses_safely() {
         Msg::CommandFinished(CommandResult::Discarded {
             changeset: reloaded,
             staged: None,
-            backed_up: false,
+            recovery: margin_tui::DiscardRecovery::Unbacked,
         }),
     );
-    assert!(render(&mut state, 80, 24).contains("backup disabled"));
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("WITHOUT BACKUP"), "{frame}");
+    assert!(frame.contains("cannot be undone"), "{frame}");
 }
 
 /// A changeset where a lockfile dwarfs the real change (issue #21).

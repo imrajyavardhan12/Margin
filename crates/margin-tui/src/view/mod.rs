@@ -78,13 +78,24 @@ pub fn view(state: &AppState, frame: &mut Frame) {
 
 fn render_status(state: &AppState, frame: &mut Frame, area: Rect) {
     // The discard confirmation owns the line while open: it names the
-    // target and echoes the typed word (ADR-0014). The input is filtered
-    // of control characters at update() time; the label is display_path().
+    // target, states whether recovery exists (ADR-0017), and echoes the
+    // typed word (ADR-0014). The input is filtered of control characters
+    // at update() time; the label is display_path().
     if let Some(confirm) = &state.confirm {
-        let line = format!(
-            " discard hunk in {}? type yes \u{23ce} to confirm, Esc cancels  {}\u{258c}",
-            confirm.label, confirm.input
-        );
+        // Both variants fit the 80-column status line for ordinary file
+        // names; longer labels clip the input echo first, never the
+        // recovery promise (ADR-0017).
+        let line = if state.discard_backup {
+            format!(
+                " discard hunk in {}? type yes \u{23ce}, Esc cancels (`margin undo` restores)  {}\u{258c}",
+                confirm.label, confirm.input
+            )
+        } else {
+            format!(
+                " discard {} WITHOUT BACKUP? type yes \u{23ce}, Esc cancels (cannot be undone) {}\u{258c}",
+                confirm.label, confirm.input
+            )
+        };
         frame.render_widget(
             Paragraph::new(TLine::from(line)).style(state.theme.status_bar),
             area,

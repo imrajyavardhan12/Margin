@@ -256,12 +256,13 @@ pub enum CommandResult {
         changeset: Changeset,
         staged: Option<StagedFiles>,
     },
-    /// `Command::DiscardHunk` succeeded; `backed_up` says whether a trash
-    /// entry exists (`discard_trash = false` disables them).
+    /// `Command::DiscardHunk` succeeded; `recovery` says whether a trash
+    /// entry exists. It mirrors the transaction outcome verbatim — the
+    /// binary must never substitute its own guess (issue #96).
     Discarded {
         changeset: Changeset,
         staged: Option<StagedFiles>,
-        backed_up: bool,
+        recovery: DiscardRecovery,
     },
     /// The hunk didn't apply. Carries the attempted action because the
     /// honest diagnosis differs: a stage that fails is usually already
@@ -273,6 +274,16 @@ pub enum CommandResult {
     /// The command completed with nothing to report (persistence).
     Done,
     Failed(String),
+}
+
+/// Whether a discarded hunk can be restored. Constructed by the binary
+/// from the discard transaction outcome — never guessed (issue #96).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscardRecovery {
+    /// A durable trash entry exists; `margin undo` restores it.
+    BackedUp,
+    /// Nothing was retained; the hunk is gone for good.
+    Unbacked,
 }
 
 /// Effect boundary for the runtime shell (same dependency inversion as
@@ -405,6 +416,11 @@ pub struct AppState {
     /// Watch mode (`-w`): the status bar shows `[watch]` and the runtime
     /// feeds debounced reloads. Set by the binary at startup.
     pub watching: bool,
+    /// Whether discards in this review persist a recovery copy (ADR-0014,
+    /// ADR-0017). The confirmation prompt states the consequence, so an
+    /// unbacked review can never look like a recoverable one. Set by the
+    /// binary at startup; defaults to backed up.
+    pub discard_backup: bool,
     /// Fold (collapse) state per file, keyed by canonical byte path so it
     /// survives reloads (issue #21). Every current file has an entry.
     fold: std::collections::HashMap<Vec<u8>, bool>,
@@ -449,6 +465,7 @@ impl AppState {
             confirm: None,
             note: None,
             watching: false,
+            discard_backup: true,
             fold: std::collections::HashMap::new(),
             viewed: std::collections::HashMap::new(),
             notes: std::collections::BTreeMap::new(),
@@ -1020,14 +1037,18 @@ impl AppState {
             CommandResult::Discarded {
                 changeset,
                 staged,
-                backed_up,
+                recovery,
             } => {
                 self.absorb_changeset(changeset, staged);
-                self.status_message = Some(if backed_up {
-                    "hunk discarded — `margin undo` restores it".into()
-                } else {
-                    "hunk discarded (backup disabled)".into()
-                });
+                self.status_message = Some(
+                    match recovery {
+                        DiscardRecovery::BackedUp => "hunk discarded — `margin undo` restores it",
+                        DiscardRecovery::Unbacked => {
+                            "hunk discarded WITHOUT BACKUP — cannot be undone"
+                        }
+                    }
+                    .into(),
+                );
             }
             // The apply's dry run refused. The likeliest cause depends on
             // the direction: re-staging what's already in the index, or

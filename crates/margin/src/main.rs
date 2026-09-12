@@ -73,6 +73,13 @@ struct Cli {
     #[arg(long, global = true)]
     no_mouse: bool,
 
+    /// Discard worktree hunks without writing a recovery patch (ADR-0017).
+    /// Applies to worktree reviews only, for this invocation only: the
+    /// confirmation states that recovery is unavailable, and `margin undo`
+    /// cannot restore the hunk. Never stored in configuration.
+    #[arg(long, global = true)]
+    discard_without_backup: bool,
+
     /// Print the effective configuration (after merging files and flags)
     #[arg(long)]
     dump_config: bool,
@@ -231,7 +238,7 @@ fn main() -> ExitCode {
         eprintln!("margin: --json and --notes cannot be combined");
         return ExitCode::from(2);
     }
-    let session = ReviewOptions::new(config, theme, json, cli.notes);
+    let session = ReviewOptions::new(config, theme, json, cli.notes, cli.discard_without_backup);
 
     match command {
         Command::Diff(args) => run_diff(args, &session),

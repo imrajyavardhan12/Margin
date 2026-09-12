@@ -24,7 +24,10 @@ mod gh;
 mod git;
 mod staging;
 
-pub use discard::{apply_patch_to_worktree, undo_last_discard, write_trash, UndoError};
+pub use discard::{
+    apply_patch_to_worktree, discard_hunk, undo_last_discard, write_trash, DiscardError,
+    DiscardMode, DiscardOutcome, UndoError,
+};
 pub use files::TwoFiles;
 pub use gh::GhPr;
 pub use git::{staged_paths, workdir_root, GitRevRange, GitShow, GitStaged, GitWorktree};

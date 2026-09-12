@@ -11,9 +11,170 @@ use std::path::Path;
 use git2::{Repository, Status};
 use margin_core::{render_hunk_patch, render_reversed_hunk_patch};
 use margin_vcs::{
-    apply_patch_to_worktree, undo_last_discard, write_trash, DiffSource, GitWorktree, StageError,
-    UndoError,
+    apply_patch_to_worktree, discard_hunk, undo_last_discard, write_trash, DiffSource,
+    DiscardError, DiscardMode, DiscardOutcome, GitWorktree, StageError, UndoError,
 };
+
+fn trash_entries(path: &Path) -> Vec<std::path::PathBuf> {
+    let dir = path.join(".git/margin/trash");
+    match std::fs::read_dir(&dir) {
+        Ok(entries) => entries.filter_map(|e| e.ok().map(|e| e.path())).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Issue #96: the transaction backs up, preflights, and applies as one
+/// unit, and reports recovery metadata that cannot misreport.
+#[test]
+fn transaction_discards_with_backup_and_reports_recovery() {
+    let (dir, repo) = repo_with_two_hunks();
+    let path = dir.path();
+
+    let changeset = GitWorktree::new(path).load().unwrap();
+    let file = &changeset.files[0];
+    let backup = render_hunk_patch(file, &file.hunks[0]).unwrap();
+    let reversed = render_reversed_hunk_patch(file, &file.hunks[0]).unwrap();
+
+    let outcome = discard_hunk(path, &backup, &reversed, DiscardMode::BackUp).unwrap();
+    assert_eq!(outcome, DiscardOutcome::BackedUp);
+    assert_eq!(
+        fs::read_to_string(path.join("notes.txt")).unwrap(),
+        FIRST_DISCARDED
+    );
+    assert_eq!(trash_entries(path).len(), 1, "exactly one recovery copy");
+    assert!(!status_of(&repo, "notes.txt").contains(Status::INDEX_MODIFIED));
+}
+
+/// Issue #96: a stale hunk refuses with the tree untouched, and the
+/// orphan backup is removed so undo cannot restore what was never lost.
+#[test]
+fn transaction_stale_removes_its_orphan_backup() {
+    let (dir, _repo) = repo_with_two_hunks();
+    let path = dir.path();
+
+    let changeset = GitWorktree::new(path).load().unwrap();
+    let file = &changeset.files[0];
+    let backup = render_hunk_patch(file, &file.hunks[0]).unwrap();
+    let reversed = render_reversed_hunk_patch(file, &file.hunks[0]).unwrap();
+
+    let moved = MODIFIED.replace("line TWO changed", "line TWO changed again");
+    fs::write(path.join("notes.txt"), &moved).unwrap();
+
+    let err = discard_hunk(path, &backup, &reversed, DiscardMode::BackUp).unwrap_err();
+    assert!(matches!(err, DiscardError::Stale(_)), "{err:?}");
+    assert_eq!(fs::read_to_string(path.join("notes.txt")).unwrap(), moved);
+    assert!(
+        trash_entries(path).is_empty(),
+        "orphan backup removed: undo must not restore a hunk that was never discarded"
+    );
+}
+
+/// Issue #96: when the recovery copy cannot be established, nothing is
+/// destroyed — the worktree is exactly as it was.
+#[test]
+fn transaction_backup_failure_leaves_the_tree_untouched() {
+    let (dir, _repo) = repo_with_two_hunks();
+    let path = dir.path();
+
+    let changeset = GitWorktree::new(path).load().unwrap();
+    let file = &changeset.files[0];
+    let backup = render_hunk_patch(file, &file.hunks[0]).unwrap();
+    let reversed = render_reversed_hunk_patch(file, &file.hunks[0]).unwrap();
+
+    // A file where the trash directory belongs makes every backup fail.
+    let blocker = path.join(".git/margin/trash");
+    fs::create_dir_all(blocker.parent().unwrap()).unwrap();
+    fs::write(&blocker, "in the way").unwrap();
+
+    let err = discard_hunk(path, &backup, &reversed, DiscardMode::BackUp).unwrap_err();
+    assert!(matches!(err, DiscardError::Backup(_)), "{err:?}");
+    assert_eq!(
+        fs::read_to_string(path.join("notes.txt")).unwrap(),
+        MODIFIED,
+        "no backup, no discard"
+    );
+}
+
+/// Issue #96: a failure after the backup (here, an unparseable patch)
+/// keeps the recovery copy for hand-recovery instead of hiding it.
+#[test]
+fn transaction_apply_failure_keeps_the_backup() {
+    let (dir, _repo) = repo_with_two_hunks();
+    let path = dir.path();
+
+    let changeset = GitWorktree::new(path).load().unwrap();
+    let file = &changeset.files[0];
+    let backup = render_hunk_patch(file, &file.hunks[0]).unwrap();
+
+    let err = discard_hunk(path, &backup, b"not a patch", DiscardMode::BackUp).unwrap_err();
+    assert!(matches!(err, DiscardError::Git(_)), "{err:?}");
+    assert_eq!(
+        trash_entries(path).len(),
+        1,
+        "recovery copy kept for hand-recovery"
+    );
+    assert_eq!(
+        fs::read_to_string(path.join("notes.txt")).unwrap(),
+        MODIFIED,
+        "unparseable patch changes nothing"
+    );
+}
+
+/// Issue #96: the explicit unbacked path (ADR-0017) changes the tree,
+/// writes no recovery copy, and says so in its outcome.
+#[test]
+fn transaction_unbacked_discards_without_recovery() {
+    let (dir, _repo) = repo_with_two_hunks();
+    let path = dir.path();
+
+    let changeset = GitWorktree::new(path).load().unwrap();
+    let file = &changeset.files[0];
+    let backup = render_hunk_patch(file, &file.hunks[0]).unwrap();
+    let reversed = render_reversed_hunk_patch(file, &file.hunks[0]).unwrap();
+
+    let outcome = discard_hunk(path, &backup, &reversed, DiscardMode::SkipBackup).unwrap();
+    assert_eq!(outcome, DiscardOutcome::Unbacked);
+    assert_eq!(
+        fs::read_to_string(path.join("notes.txt")).unwrap(),
+        FIRST_DISCARDED
+    );
+    assert!(
+        trash_entries(path).is_empty(),
+        "sensitive content leaves no copy behind"
+    );
+    assert!(
+        matches!(undo_last_discard(path), Err(UndoError::Empty)),
+        "nothing to restore, honestly reported"
+    );
+}
+
+/// Issue #96: untracked content discards through the same transaction,
+/// and undo restores it.
+#[test]
+fn transaction_discards_untracked_content_recoverably() {
+    let (dir, _repo) = repo_with_two_hunks();
+    let path = dir.path();
+    fs::write(path.join("scratch.txt"), "temporary notes\n").unwrap();
+
+    let changeset = GitWorktree::new(path).load().unwrap();
+    let file = changeset
+        .files
+        .iter()
+        .find(|f| f.display_path() == "scratch.txt")
+        .expect("untracked files enter the worktree view as additions");
+    let backup = render_hunk_patch(file, &file.hunks[0]).unwrap();
+    let reversed = render_reversed_hunk_patch(file, &file.hunks[0]).unwrap();
+
+    let outcome = discard_hunk(path, &backup, &reversed, DiscardMode::BackUp).unwrap();
+    assert_eq!(outcome, DiscardOutcome::BackedUp);
+    assert!(!path.join("scratch.txt").exists());
+
+    undo_last_discard(path).unwrap();
+    assert_eq!(
+        fs::read_to_string(path.join("scratch.txt")).unwrap(),
+        "temporary notes\n"
+    );
+}
 
 const BASE: &str = "line one\nline two\nline three\nline four\nline five\nline six\n\
 line seven\nline eight\nline nine\nline ten\nline eleven\nline twelve\n\
