@@ -220,6 +220,16 @@ fn with_terminal_session<T>(
     session.finish(result)
 }
 
+/// What the review session observed, for the process exit code
+/// (ADR-0022): review never ends early over a failure, but the outcome
+/// records whether one was shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SessionOutcome {
+    /// A write, reload, or persistence failure was shown during the
+    /// session. The binary maps this to exit 1.
+    pub had_failure: bool,
+}
+
 /// Run the review session to completion (user quit) or error. The
 /// executor performs any side effects `update` requests (ADR-0013);
 /// `watch`, when present, feeds debounced reloads (issue #12).
@@ -228,7 +238,7 @@ pub fn run(
     executor: &mut dyn CommandExecutor,
     watch: Option<&WatchHandle>,
     mouse: bool,
-) -> io::Result<()> {
+) -> io::Result<SessionOutcome> {
     install_panic_hook();
     let mut control = CrosstermControl;
     with_terminal_session(&mut control, mouse, || {
@@ -253,7 +263,7 @@ fn event_loop(
     state: &mut AppState,
     executor: &mut dyn CommandExecutor,
     watch: Option<&WatchHandle>,
-) -> io::Result<()> {
+) -> io::Result<SessionOutcome> {
     // Draw only when something changed (or highlight fill-in is owed):
     // watch mode wakes every 100ms to check the debounce, and re-rendering
     // an unchanged frame at 10Hz would waste idle CPU for nothing.
@@ -264,7 +274,9 @@ fn event_loop(
             needs_draw = false;
         }
         if state.should_quit {
-            return Ok(());
+            return Ok(SessionOutcome {
+                had_failure: state.session_had_failure,
+            });
         }
         // Pick how long to wait for input. Pending highlight work wants
         // fast fill-in frames; watch mode needs periodic wake-ups to check

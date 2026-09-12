@@ -25,4 +25,4 @@ expression: frame
                                  └ binary file: contents not shown
                            R old/path.txt → new/path.txt  +0 -0
                                  └ renamed without content changes
- discard hunk in src/app.rs? type yes ⏎ to confirm, Esc cancels  ▌
+ discard hunk in src/app.rs? type yes ⏎, Esc cancels (`margin undo` restores)  ▌

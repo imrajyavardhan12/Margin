@@ -50,6 +50,10 @@ struct UserFile {
     /// Back up discarded hunks to `.git/margin/trash/` (ADR-0014).
     /// Deliberately absent from [`RepoFile`]: a checked-out repository
     /// must never be able to disable backups.
+    ///
+    /// Deprecated (ADR-0017): `false` still opts out until removal, but
+    /// every invocation warns loudly — use `--discard-without-backup`
+    /// per invocation instead.
     discard_trash: Option<bool>,
     /// Globs of paths to auto-collapse (issue #21), on top of the
     /// built-in generated-file heuristics.

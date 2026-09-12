@@ -481,7 +481,7 @@ fn discard_flow_requires_typed_yes() {
         Msg::CommandFinished(CommandResult::Discarded {
             changeset: reloaded,
             staged: None,
-            backed_up: true,
+            recovery: margin_tui::DiscardRecovery::BackedUp,
         }),
     );
     let frame = render(&mut state, 80, 24);
@@ -524,6 +524,21 @@ fn discard_cancels_and_refuses_safely() {
     assert!(state.confirm.is_none(), "unsafe path must not prompt");
     assert!(render(&mut state, 80, 24).contains("needs git quoting"));
 
+    // An unbacked review states the consequence before anything is typed
+    // (ADR-0017): the prompt warns recovery is unavailable.
+    let mut state = sample_state();
+    state.discard_backup = false;
+    update(&mut state, Msg::Resize(80, 24));
+    update(&mut state, Msg::NextHunk);
+    update(&mut state, Msg::DiscardHunk);
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("WITHOUT BACKUP"), "{frame}");
+    assert!(frame.contains("cannot be undone"), "{frame}");
+    assert!(
+        !frame.contains("margin undo"),
+        "no false recovery promise: {frame}"
+    );
+
     // Without a trash entry the success message says so.
     let mut state = sample_state();
     let reloaded = state.changeset.clone();
@@ -532,10 +547,12 @@ fn discard_cancels_and_refuses_safely() {
         Msg::CommandFinished(CommandResult::Discarded {
             changeset: reloaded,
             staged: None,
-            backed_up: false,
+            recovery: margin_tui::DiscardRecovery::Unbacked,
         }),
     );
-    assert!(render(&mut state, 80, 24).contains("backup disabled"));
+    let frame = render(&mut state, 80, 24);
+    assert!(frame.contains("WITHOUT BACKUP"), "{frame}");
+    assert!(frame.contains("cannot be undone"), "{frame}");
 }
 
 /// A changeset where a lockfile dwarfs the real change (issue #21).
@@ -705,18 +722,18 @@ fn status_bar_shows_hunk_position_in_both_layouts() {
 }
 
 /// `m` marks the cursor's file viewed: checkmark in the sidebar, body
-/// folded, marks persisted via Command::SaveViewed; `m` again undoes it.
+/// folded, state persisted via Command::SaveReviewState; `m` again undoes it.
 #[test]
 fn m_toggles_viewed_folds_and_persists() {
     let mut state = sample_state();
     update(&mut state, Msg::Resize(80, 24));
 
     let command = update(&mut state, Msg::ToggleViewed).expect("toggle emits a save");
-    let Command::SaveViewed { entries } = command else {
-        panic!("expected SaveViewed");
+    let Command::SaveReviewState { viewed, .. } = command else {
+        panic!("expected SaveReviewState");
     };
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].0, "src/app.rs");
+    assert_eq!(viewed.len(), 1);
+    assert_eq!(viewed[0].0, b"src/app.rs");
     assert!(state.is_viewed(0));
     let frame = render(&mut state, 80, 24);
     assert!(frame.contains('\u{2713}'), "checkmark shows: {frame}");
@@ -734,10 +751,10 @@ fn m_toggles_viewed_folds_and_persists() {
 
     // m again: unmark, and the save reflects it.
     let command = update(&mut state, Msg::ToggleViewed).expect("untoggle saves too");
-    let Command::SaveViewed { entries } = command else {
-        panic!("expected SaveViewed");
+    let Command::SaveReviewState { viewed, .. } = command else {
+        panic!("expected SaveReviewState");
     };
-    assert!(entries.is_empty());
+    assert!(viewed.is_empty());
     assert!(!state.is_viewed(0));
 }
 

@@ -229,13 +229,15 @@ pub enum Command {
     DiscardHunk { backup: Vec<u8>, patch: Vec<u8> },
     /// Re-read the changeset from the active source (`r`).
     Reload,
-    /// Persist the viewed marks (issue #20): lossy path → content digest.
-    /// Sources without a stable identity (pager/patch) ignore this — the
-    /// marks stay session-only.
-    SaveViewed { entries: Vec<(String, u64)> },
-    /// Persist review notes (issue #23): lossy path, hunk digest, text.
-    /// Like `SaveViewed`, sources without a stable identity ignore it.
-    SaveNotes { entries: Vec<(String, u64, String)> },
+    /// Persist the complete review state (ADR-0020): viewed marks plus
+    /// review notes in one snapshot, with byte-exact paths. The binary
+    /// stores both atomically, so the two can never diverge. Sources
+    /// without a stable identity (pager/patch) ignore this — the state
+    /// stays session-only.
+    SaveReviewState {
+        viewed: Vec<(Vec<u8>, u64)>,
+        notes: Vec<(Vec<u8>, u64, String)>,
+    },
 }
 
 /// Outcome of a command, fed back into [`update`] as
@@ -254,12 +256,13 @@ pub enum CommandResult {
         changeset: Changeset,
         staged: Option<StagedFiles>,
     },
-    /// `Command::DiscardHunk` succeeded; `backed_up` says whether a trash
-    /// entry exists (`discard_trash = false` disables them).
+    /// `Command::DiscardHunk` succeeded; `recovery` says whether a trash
+    /// entry exists. It mirrors the transaction outcome verbatim — the
+    /// binary must never substitute its own guess (issue #96).
     Discarded {
         changeset: Changeset,
         staged: Option<StagedFiles>,
-        backed_up: bool,
+        recovery: DiscardRecovery,
     },
     /// The hunk didn't apply. Carries the attempted action because the
     /// honest diagnosis differs: a stage that fails is usually already
@@ -271,6 +274,16 @@ pub enum CommandResult {
     /// The command completed with nothing to report (persistence).
     Done,
     Failed(String),
+}
+
+/// Whether a discarded hunk can be restored. Constructed by the binary
+/// from the discard transaction outcome — never guessed (issue #96).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscardRecovery {
+    /// A durable trash entry exists; `margin undo` restores it.
+    BackedUp,
+    /// Nothing was retained; the hunk is gone for good.
+    Unbacked,
 }
 
 /// Effect boundary for the runtime shell (same dependency inversion as
@@ -403,13 +416,22 @@ pub struct AppState {
     /// Watch mode (`-w`): the status bar shows `[watch]` and the runtime
     /// feeds debounced reloads. Set by the binary at startup.
     pub watching: bool,
+    /// Whether a write, reload, or persistence failure was shown during
+    /// this session (ADR-0022). Review continues regardless; the runtime
+    /// reports it so the process exits 1 on quit.
+    pub session_had_failure: bool,
+    /// Whether discards in this review persist a recovery copy (ADR-0014,
+    /// ADR-0017). The confirmation prompt states the consequence, so an
+    /// unbacked review can never look like a recoverable one. Set by the
+    /// binary at startup; defaults to backed up.
+    pub discard_backup: bool,
     /// Fold (collapse) state per file, keyed by canonical byte path so it
     /// survives reloads (issue #21). Every current file has an entry.
     fold: std::collections::HashMap<Vec<u8>, bool>,
     /// Viewed marks (issue #20): path → content digest at mark time. A
     /// mark only counts while the digest still matches — a changed file
-    /// un-views itself. Loaded by the binary from the per-DiffId store;
-    /// every toggle emits `Command::SaveViewed`.
+    /// un-views itself. Loaded by the binary from the per-DiffId review
+    /// state; every toggle emits `Command::SaveReviewState`.
     viewed: std::collections::HashMap<Vec<u8>, u64>,
     /// Review notes (issue #23), keyed by `(file index, hunk index)` for
     /// the live session — row indices churn with layout and folding, but
@@ -447,6 +469,8 @@ impl AppState {
             confirm: None,
             note: None,
             watching: false,
+            session_had_failure: false,
+            discard_backup: true,
             fold: std::collections::HashMap::new(),
             viewed: std::collections::HashMap::new(),
             notes: std::collections::BTreeMap::new(),
@@ -543,17 +567,21 @@ impl AppState {
             .is_some_and(|key| self.viewed.contains_key(key))
     }
 
-    /// Snapshot the marks for the persistence command (lossy paths: the
-    /// store is advisory, digests do the real matching). Sorted, so the
-    /// store file is deterministic.
-    fn save_viewed_command(&self) -> Command {
-        let mut entries: Vec<(String, u64)> = self
+    /// Snapshot the complete review state for the persistence command:
+    /// viewed marks plus review notes, with byte-exact paths (digests do
+    /// the real matching on load). Sorted, so the store file is
+    /// deterministic.
+    fn save_review_state_command(&self) -> Command {
+        let mut viewed: Vec<(Vec<u8>, u64)> = self
             .viewed
             .iter()
-            .map(|(path, digest)| (String::from_utf8_lossy(path).into_owned(), *digest))
+            .map(|(path, digest)| (path.clone(), *digest))
             .collect();
-        entries.sort();
-        Command::SaveViewed { entries }
+        viewed.sort();
+        Command::SaveReviewState {
+            viewed,
+            notes: self.notes_snapshot(),
+        }
     }
 
     /// The note on a hunk, if any (issue #23).
@@ -595,21 +623,21 @@ impl AppState {
         }
     }
 
-    /// Snapshot notes for persistence: `(lossy path, hunk digest, text)`,
+    /// Snapshot notes for persistence: `(byte path, hunk digest, text)`,
     /// sorted for a deterministic store file.
-    fn notes_snapshot(&self) -> Vec<(String, u64, String)> {
-        let mut entries: Vec<(String, u64, String)> = self
+    fn notes_snapshot(&self) -> Vec<(Vec<u8>, u64, String)> {
+        let mut entries: Vec<(Vec<u8>, u64, String)> = self
             .notes
             .iter()
             .filter_map(|(&(f, h), text)| {
                 let file = self.changeset.files.get(f)?;
                 let hunk = file.hunks.get(h)?;
                 // Must be the *same* derivation `set_notes` compares
-                // against (raw `path_key`, lossily stringified) — not
-                // `display_path`, whose control-character substitution
-                // would round-trip to a key that never matches again.
+                // against (raw `path_key`) — not `display_path`, whose
+                // control-character substitution would round-trip to a
+                // key that never matches again.
                 Some((
-                    String::from_utf8_lossy(path_key(file)?).into_owned(),
+                    path_key(file)?.to_vec(),
                     margin_core::hunk_digest(hunk),
                     text.clone(),
                 ))
@@ -1014,14 +1042,18 @@ impl AppState {
             CommandResult::Discarded {
                 changeset,
                 staged,
-                backed_up,
+                recovery,
             } => {
                 self.absorb_changeset(changeset, staged);
-                self.status_message = Some(if backed_up {
-                    "hunk discarded — `margin undo` restores it".into()
-                } else {
-                    "hunk discarded (backup disabled)".into()
-                });
+                self.status_message = Some(
+                    match recovery {
+                        DiscardRecovery::BackedUp => "hunk discarded — `margin undo` restores it",
+                        DiscardRecovery::Unbacked => {
+                            "hunk discarded WITHOUT BACKUP — cannot be undone"
+                        }
+                    }
+                    .into(),
+                );
             }
             // The apply's dry run refused. The likeliest cause depends on
             // the direction: re-staging what's already in the index, or
@@ -1041,7 +1073,12 @@ impl AppState {
             }
             CommandResult::Unsupported(why) => self.status_message = Some(why.into()),
             CommandResult::Done => {}
-            CommandResult::Failed(err) => self.status_message = Some(format!("failed: {err}")),
+            CommandResult::Failed(err) => {
+                // ADR-0022: review continues, but the process exits 1 —
+                // the failure was shown, so it must not vanish silently.
+                self.session_had_failure = true;
+                self.status_message = Some(format!("failed: {err}"));
+            }
         }
     }
 
@@ -1222,9 +1259,7 @@ pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
                 } else {
                     state.notes.insert((note.file, note.hunk), text);
                 }
-                command = Some(Command::SaveNotes {
-                    entries: state.notes_snapshot(),
-                });
+                command = Some(state.save_review_state_command());
             }
         }
         Msg::NoteCancel => state.note = None,
@@ -1280,7 +1315,7 @@ pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
                         state.fold.insert(key, true);
                     }
                     state.rebuild_rows_after_fold(Some(idx));
-                    command = Some(state.save_viewed_command());
+                    command = Some(state.save_review_state_command());
                 }
             }
         }
@@ -1778,6 +1813,29 @@ mod tests {
         assert_eq!((old_no, new_no), (None, Some(2)), "addition: new side only");
     }
 
+    /// ADR-0022: a shown failure marks the session for exit 1 without
+    /// ending the review; benign outcomes leave the flag clear.
+    #[test]
+    fn failed_commands_mark_the_session_without_ending_review() {
+        let mut state = sample();
+        assert!(!state.session_had_failure);
+        assert!(!state.should_quit);
+
+        update(&mut state, Msg::CommandFinished(CommandResult::Done));
+        assert!(!state.session_had_failure, "clean writes stay clean");
+
+        update(
+            &mut state,
+            Msg::CommandFinished(CommandResult::Failed("disk full".into())),
+        );
+        assert!(state.session_had_failure, "shown failure is recorded");
+        assert!(!state.should_quit, "review continues regardless");
+        assert!(
+            state.status_message.is_some(),
+            "the developer was told, so exit 1 is honest"
+        );
+    }
+
     #[test]
     fn gg_chord_jumps_to_top_and_g_alone_does_not() {
         let mut state = sample();
@@ -1888,7 +1946,7 @@ mod tests {
         assert_eq!(state.note_for(file, hunk), Some("needs a test"));
         assert_eq!(state.note_count(file), 1);
         assert!(
-            matches!(command, Some(Command::SaveNotes { .. })),
+            matches!(command, Some(Command::SaveReviewState { .. })),
             "submitting persists"
         );
 

@@ -78,11 +78,91 @@ pub fn write_trash(repo_path: &Path, patch: &[u8]) -> Result<PathBuf, UndoError>
         {
             Ok(mut file) => {
                 file.write_all(patch)?;
+                // The backup must survive an OS crash before the worktree
+                // write lands; otherwise the trash holds a torn patch for
+                // a hunk that is already gone (issue #96).
+                file.sync_all()?;
                 return Ok(path);
             }
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => millis += 1,
             Err(err) => return Err(err.into()),
         }
+    }
+}
+
+/// Whether the discard transaction persists a recovery copy first.
+/// `SkipBackup` exists only for the explicit per-invocation escape hatch
+/// (ADR-0017); it is never stored in configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscardMode {
+    /// Normal path: a durable trash entry exists before anything is
+    /// destroyed.
+    BackUp,
+    /// The developer explicitly accepted an unrecoverable discard for
+    /// this invocation.
+    SkipBackup,
+}
+
+/// Recovery metadata the transaction guarantees about what it did. The
+/// outcome is constructed at the site of the backup write, so no caller
+/// can misreport whether recovery is available (issue #96).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscardOutcome {
+    /// A durable trash entry exists; `margin undo` restores it.
+    BackedUp,
+    /// Nothing was retained; the hunk cannot be restored.
+    Unbacked,
+}
+
+/// Why a discard did not happen.
+#[derive(Debug, thiserror::Error)]
+pub enum DiscardError {
+    /// The recovery copy could not be established, so nothing was
+    /// touched: the worktree is exactly as it was.
+    #[error("discard aborted, backup failed: {0}")]
+    Backup(#[from] UndoError),
+    /// The hunk no longer matches the working-tree content — the world
+    /// moved since the review loaded. The tree was not modified, and any
+    /// backup written for the attempt was removed again.
+    #[error("hunk no longer applies; reload to review the current state")]
+    Stale(#[source] git2::Error),
+    /// Everything else (not a repository, corrupt patch, I/O mid-apply).
+    /// A backup written before the failure is kept for hand-recovery:
+    /// the tree may be partially modified.
+    #[error(transparent)]
+    Git(#[from] git2::Error),
+}
+
+/// Execute a discard as one recoverable transaction (issue #96):
+/// establish the recovery copy first, then preflight and apply exactly
+/// the reversed patch. The whole safety invariant lives here — callers
+/// supply rendered patches and report the returned outcome verbatim.
+pub fn discard_hunk(
+    repo_path: &Path,
+    backup: &[u8],
+    patch: &[u8],
+    mode: DiscardMode,
+) -> Result<DiscardOutcome, DiscardError> {
+    let trash_entry = match mode {
+        DiscardMode::BackUp => Some(write_trash(repo_path, backup)?),
+        DiscardMode::SkipBackup => None,
+    };
+    match apply_patch_to_worktree(repo_path, patch) {
+        Ok(()) => Ok(if trash_entry.is_some() {
+            DiscardOutcome::BackedUp
+        } else {
+            DiscardOutcome::Unbacked
+        }),
+        Err(StageError::Stale(source)) => {
+            // A refused dry run changed nothing: remove the orphan backup
+            // so a later `margin undo` cannot restore a hunk that was
+            // never discarded.
+            if let Some(path) = trash_entry {
+                let _ = std::fs::remove_file(path);
+            }
+            Err(DiscardError::Stale(source))
+        }
+        Err(StageError::Git(source)) => Err(DiscardError::Git(source)),
     }
 }
 

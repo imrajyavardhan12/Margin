@@ -86,11 +86,116 @@ fn identical_files_report_no_changes() {
 }
 
 #[test]
-fn outside_a_repo_exits_2_with_a_clear_message() {
+fn outside_a_repo_exits_1_with_a_clear_message() {
+    // ADR-0022: the invocation is valid, the world is not a repo —
+    // operational failure (1), not misuse (2).
     let dir = tempfile::tempdir().unwrap();
     let out = margin().current_dir(dir.path()).output().unwrap();
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("not a git repository"));
+}
+
+#[test]
+fn exit_code_contract_distinguishes_clean_warns_and_misuse() {
+    // ADR-0022, one test per class so the stable contract cannot drift.
+    // Clean: piped two-file diff with no warnings.
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.txt");
+    let b = dir.path().join("b.txt");
+    std::fs::write(&a, "x\n").unwrap();
+    std::fs::write(&b, "x\ny\n").unwrap();
+    let out = margin()
+        .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+
+    // Warned but usable: truncated hunk parses partially, warns on
+    // stderr, and exits 1 with the document on stdout.
+    let truncated = b"diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n\
+                     @@ -1,2 +1,2 @@\n one\n-two\n";
+    let out = run_with_stdin(&["patch", "--json"], truncated);
+    assert_eq!(out.status.code(), Some(1));
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).expect("usable JSON");
+    assert!(doc.get("files").is_some(), "document preserved");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("margin: patch line"),
+        "warning surfaced"
+    );
+
+    // Misuse: a patch path that names nothing is an invalid invocation.
+    let out = margin()
+        .args(["patch", "/nonexistent-margin-test-patch.diff"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+}
+
+#[test]
+fn discard_escape_hatch_is_invocation_only_and_documented() {
+    // ADR-0017: the unbacked path is an explicit per-invocation flag,
+    // never configuration. It must exist, and its help must state the
+    // scope (worktree reviews, this invocation, no recovery via undo).
+    let out = margin().args(["--help"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let help = String::from_utf8_lossy(&out.stdout);
+    assert!(help.contains("--discard-without-backup"), "{help}");
+    assert!(help.contains("Never stored in configuration"), "{help}");
+
+    // The deprecated persistent opt-out still parses (removal comes
+    // later); behavior + warnings are covered by unit tests.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "discard_trash = false\n").unwrap();
+    let out = margin()
+        .env("MARGIN_CONFIG", dir.path().join("config.toml"))
+        .arg("--dump-config")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let dump = String::from_utf8_lossy(&out.stdout);
+    assert!(dump.contains("discard_trash = false"), "{dump}");
+}
+
+#[cfg(unix)]
+#[test]
+fn ordinary_broken_pipes_exit_0() {
+    // ADR-0022: `margin diff | head` is normal use. Output must exceed
+    // the 64 KiB pipe buffer so the reader actually goes away mid-write;
+    // a panic on EPIPE (exit 101) would fail this.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
+    for i in 0..2000 {
+        std::fs::write(dir.path().join(format!("f{i}.txt")), "x\n").unwrap();
+    }
+    let mut index = repo.index().unwrap();
+    for i in 0..2000 {
+        index
+            .add_path(std::path::Path::new(&format!("f{i}.txt")))
+            .unwrap();
+    }
+    index.write().unwrap();
+
+    for args in [vec!["diff"], vec!["diff", "--json"]] {
+        let mut margin = margin()
+            .current_dir(dir.path())
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let head = Command::new("head")
+            .arg("-c10")
+            .stdin(margin.stdout.take().unwrap())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let head_out = head.wait_with_output().unwrap();
+        let status = margin.wait().unwrap();
+        assert_eq!(head_out.stdout.len(), 10);
+        // std ignores SIGPIPE, so EPIPE surfaces as an error the binary
+        // maps to 0; a println! panic would exit 101 here instead.
+        assert_eq!(status.code(), Some(0), "{args:?}");
+    }
 }
 
 #[test]
@@ -554,18 +659,19 @@ fn undo_repo() -> tempfile::TempDir {
 }
 
 /// `margin undo` restores the newest trash entry and consumes it;
-/// empty trash and non-repos exit 2 with the reason (ADR-0007/0014).
+/// empty trash and non-repos exit 1 with the reason (ADR-0022: valid
+/// invocation, uncooperative world).
 #[test]
 fn undo_restores_the_seeded_trash_entry() {
     let dir = undo_repo();
 
-    // Empty trash: exit 2, honest message.
+    // Empty trash: exit 1, honest message.
     let out = margin()
         .current_dir(dir.path())
         .arg("undo")
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("nothing to undo"));
 
     // Seed a trash entry as a discard would have written it: the forward
@@ -742,14 +848,15 @@ fn pr_reviews_through_gh() {
 #[cfg(unix)]
 #[test]
 fn pr_gives_actionable_errors() {
-    // No gh anywhere on PATH: name the missing tool.
+    // No gh anywhere on PATH: name the missing tool. ADR-0022: a valid
+    // invocation whose remote integration fails is operational (1).
     let empty = tempfile::tempdir().unwrap();
     let out = margin()
         .env("PATH", empty.path())
         .args(["pr", "1"])
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("GitHub CLI"),
         "{}",
@@ -764,7 +871,7 @@ fn pr_gives_actionable_errors() {
         .args(["pr", "1"])
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("not logged in"),
         "{}",
@@ -773,12 +880,12 @@ fn pr_gives_actionable_errors() {
 }
 
 #[test]
-fn undo_outside_a_repo_exits_2() {
+fn undo_outside_a_repo_exits_1() {
     let dir = tempfile::tempdir().unwrap();
     let out = margin()
         .current_dir(dir.path())
         .arg("undo")
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
 }
