@@ -86,18 +86,19 @@ jobs:
               tar -xf "$archive" -C smoke-prefix
               ;;
           esac
+          # Locate (don't assume) the packaged binary: archive layouts
+          # differ per platform and dist version; exactly one margin
+          # binary ships per archive.
+          bin=$(find smoke-prefix -type f \( -name margin -o -name margin.exe \) | head -n 1)
+          test -n "$bin" || { echo "no margin binary under smoke-prefix:"; find smoke-prefix | head -n 20; exit 1; }
+          test -x "$bin" || { echo "packaged binary is not executable: $bin"; exit 1; }
+          echo "BIN=$PWD/$bin" >> "$GITHUB_ENV"
           echo "PREFIX=$PWD/smoke-prefix/$(basename "$archive" | sed -E 's/\.(tar\.xz|zip)$//')" >> "$GITHUB_ENV"
       # Every check below runs the *packaged* binary from the clean
       # prefix — never target/, never PATH.
       - name: Packaged binary reports its version
         run: |
-          bin=""
-          for candidate in "$PREFIX/margin" "$PREFIX/margin.exe"; do
-            if [ -x "$candidate" ]; then bin="$candidate"; break; fi
-          done
-          test -n "$bin" || { echo "no margin binary under $PREFIX"; exit 1; }
-          echo "BIN=$bin" >> "$GITHUB_ENV"
-          "$bin" --version | grep -E '^margin [0-9]+\.[0-9]+\.[0-9]+'
+          "$BIN" --version | grep -E '^margin [0-9]+\.[0-9]+\.[0-9]+'
       - name: Piped patch, JSON, and worktree scenarios
         run: |
           patch=$(printf 'diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n')
