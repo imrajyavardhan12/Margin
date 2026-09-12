@@ -37,7 +37,7 @@ jobs:
       # shell style is dist's to fix, so actionlint covers the four
       # hand-written workflows. Its action pins are still enforced by
       # the SHA check below, which scans every workflow file.
-      - run: actionlint .github/workflows/ci.yml .github/workflows/fuzz.yml .github/workflows/pages.yml .github/workflows/advisories.yml
+      - run: actionlint .github/workflows/ci.yml .github/workflows/fuzz.yml .github/workflows/pages.yml .github/workflows/advisories.yml .github/workflows/smoke.yml
       # SHA enforcement (ADR-0024): every third-party action must be
       # pinned to a full commit SHA. Hand-written workflows also carry a
       # readable version comment so Dependabot can keep updating them;
