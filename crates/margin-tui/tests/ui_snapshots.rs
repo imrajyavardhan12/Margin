@@ -705,18 +705,18 @@ fn status_bar_shows_hunk_position_in_both_layouts() {
 }
 
 /// `m` marks the cursor's file viewed: checkmark in the sidebar, body
-/// folded, marks persisted via Command::SaveViewed; `m` again undoes it.
+/// folded, state persisted via Command::SaveReviewState; `m` again undoes it.
 #[test]
 fn m_toggles_viewed_folds_and_persists() {
     let mut state = sample_state();
     update(&mut state, Msg::Resize(80, 24));
 
     let command = update(&mut state, Msg::ToggleViewed).expect("toggle emits a save");
-    let Command::SaveViewed { entries } = command else {
-        panic!("expected SaveViewed");
+    let Command::SaveReviewState { viewed, .. } = command else {
+        panic!("expected SaveReviewState");
     };
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].0, "src/app.rs");
+    assert_eq!(viewed.len(), 1);
+    assert_eq!(viewed[0].0, b"src/app.rs");
     assert!(state.is_viewed(0));
     let frame = render(&mut state, 80, 24);
     assert!(frame.contains('\u{2713}'), "checkmark shows: {frame}");
@@ -734,10 +734,10 @@ fn m_toggles_viewed_folds_and_persists() {
 
     // m again: unmark, and the save reflects it.
     let command = update(&mut state, Msg::ToggleViewed).expect("untoggle saves too");
-    let Command::SaveViewed { entries } = command else {
-        panic!("expected SaveViewed");
+    let Command::SaveReviewState { viewed, .. } = command else {
+        panic!("expected SaveReviewState");
     };
-    assert!(entries.is_empty());
+    assert!(viewed.is_empty());
     assert!(!state.is_viewed(0));
 }
 

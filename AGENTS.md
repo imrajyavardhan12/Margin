@@ -55,8 +55,8 @@ crates/margin-tui    Elm: AppState + Msg + update() + pure view(); NEVER imports
                      (update() returns Command; CommandExecutor impl lives in the bin),
                      WatchHandle debounce (bin's notify watcher feeds it; -w)
 crates/margin        bin: clap dispatch (main.rs), capability-aware Review Session
-                     + effect execution (review.rs), config discovery/merge
-                     (config.rs), per-DiffId state: viewed.rs + notes.rs
+                     + effect execution (review.rs), atomic versioned review
+                     state (review_state.rs), config discovery/merge (config.rs)
 ```
 
 Dependency rule (compiler-enforced, do not work around):

@@ -64,8 +64,8 @@ criterion benches and guarded in CI.
   `view/{mod,diff,sidebar,help,split,style}.rs`
 - `margin`: `main.rs` (clap dispatch, passthrough guarantee), `review.rs`
   (Review Session modes, capabilities, effect execution, watching and display),
-  `config.rs` (discovery/merge, color-mode detection), `viewed.rs` and
-  `notes.rs` (v0.5 persistence; consolidation tracked by #95)
+  `review_state.rs` (atomic versioned per-DiffId review state, ADR-0020),
+  `config.rs` (discovery/merge, color-mode detection)
 
 For agent-oriented operational detail (commands, gotchas, testing
 playbook), see [AGENTS.md](https://github.com/imrajyavardhan12/Margin/blob/main/AGENTS.md).
