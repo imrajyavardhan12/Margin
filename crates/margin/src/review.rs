@@ -214,8 +214,10 @@ fn run_reloadable(
     let changeset = match source.load() {
         Ok(changeset) => changeset,
         Err(err) => {
+            // ADR-0022: the invocation names something real, but the
+            // world failed to deliver it — operational, not misuse.
             eprintln!("margin: {err}");
-            return ExitCode::from(2);
+            return ExitCode::from(1);
         }
     };
 
@@ -238,7 +240,7 @@ fn run_reloadable(
             Ok((handle, watcher)) => (Some(handle), Some(watcher)),
             Err(err) => {
                 eprintln!("margin: --watch failed to start: {err}");
-                return ExitCode::from(2);
+                return ExitCode::from(1);
             }
         },
         None => (None, None),
@@ -515,25 +517,21 @@ fn show(
     if options.json {
         match serde_json::to_string(&margin_core::json_changeset(&changeset)) {
             Ok(doc) => {
-                println!("{doc}");
-                return ExitCode::SUCCESS;
+                return crate::write_stdout(format!("{doc}\n").as_bytes());
             }
             Err(err) => {
                 eprintln!("margin: cannot serialize changeset: {err}");
-                return ExitCode::from(2);
+                return ExitCode::from(1);
             }
         }
     }
     if options.notes {
-        print!(
-            "{}",
-            margin_core::notes_markdown(&changeset, &startup.persisted.notes)
+        return crate::write_stdout(
+            margin_core::notes_markdown(&changeset, &startup.persisted.notes).as_bytes(),
         );
-        return ExitCode::SUCCESS;
     }
     if !std::io::stdout().is_terminal() {
-        print_summary(&changeset);
-        return ExitCode::SUCCESS;
+        return print_summary(&changeset);
     }
 
     let mut state = AppState::new(changeset);
@@ -555,41 +553,52 @@ fn show(
     state.staged = staged;
     state.watching = watch.is_some();
     match margin_tui::run(&mut state, executor, watch, options.config.mouse) {
-        Ok(()) => ExitCode::SUCCESS,
+        // ADR-0022: a shown write, reload, or persistence failure does
+        // not end the review, but it does fail the process on quit.
+        Ok(outcome) if outcome.had_failure => ExitCode::from(1),
+        Ok(_) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("margin: terminal error: {err}");
-            ExitCode::from(2)
+            ExitCode::from(1)
         }
     }
 }
 
-fn print_summary(changeset: &Changeset) {
+/// The piped human summary. Rendered into one buffer and written via
+/// `write_stdout` so a downstream `head` exits 0 instead of panicking
+/// on a broken pipe (ADR-0022).
+fn print_summary(changeset: &Changeset) -> ExitCode {
+    use std::fmt::Write as _;
+    let mut out = String::new();
     if changeset.is_empty() {
-        println!("no changes");
-        return;
-    }
-    for file in &changeset.files {
-        let glyph = match file.status {
-            FileStatus::Added => "A",
-            FileStatus::Deleted => "D",
-            FileStatus::Modified => "M",
-            FileStatus::Renamed => "R",
-            FileStatus::Copied => "C",
-        };
-        let binary = if file.is_binary { "  (binary)" } else { "" };
-        println!(
-            "{glyph} {:<40} +{:<4} -{:<4}{binary}",
-            file.display_path(),
-            file.additions(),
-            file.deletions()
+        out.push_str("no changes\n");
+    } else {
+        for file in &changeset.files {
+            let glyph = match file.status {
+                FileStatus::Added => "A",
+                FileStatus::Deleted => "D",
+                FileStatus::Modified => "M",
+                FileStatus::Renamed => "R",
+                FileStatus::Copied => "C",
+            };
+            let binary = if file.is_binary { "  (binary)" } else { "" };
+            let _ = writeln!(
+                out,
+                "{glyph} {:<40} +{:<4} -{:<4}{binary}",
+                file.display_path(),
+                file.additions(),
+                file.deletions()
+            );
+        }
+        let _ = writeln!(
+            out,
+            "{} files, +{} -{}",
+            changeset.files.len(),
+            changeset.additions(),
+            changeset.deletions()
         );
     }
-    println!(
-        "{} files, +{} -{}",
-        changeset.files.len(),
-        changeset.additions(),
-        changeset.deletions()
-    );
+    crate::write_stdout(out.as_bytes())
 }
 
 #[cfg(test)]
