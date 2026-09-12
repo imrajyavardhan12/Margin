@@ -43,7 +43,8 @@ crates/margin-vcs    read/write VCS adapters; git2 quarantined here
   files.rs           TwoFiles (git2 buffer diffing, no repo)
   gh.rs              GhPr: PRs via the user's gh CLI subprocess (ADR-0015)
   staging.rs         apply_patch_to_index (ADR-0013: index-only, dry-run first)
-  discard.rs         worktree discard + trash + undo (ADR-0014: trash before destroy)
+  discard.rs         recoverable discard transaction + trash + undo (ADR-0014/0017:
+                     backup first, outcome-typed, fsynced; unbacked only per-invocation)
 crates/margin-tui    Elm: AppState + Msg + update() + pure view(); NEVER imports margin-vcs
   app.rs             state, Row stream (rebuilt per layout), update()
   keymap.rs          key -> Msg, one table, no logic
@@ -90,7 +91,7 @@ Dependency rule (compiler-enforced, do not work around):
 | Interaction | drive `update()` with `Msg` sequences, then snapshot/assert | no TTY needed |
 | VCS integration | `margin-vcs/tests/git_sources.rs` | build real temp repos with git2 (`TestRepo` helper) |
 | Binary/CLI | `margin/tests/cli.rs` | `env!("CARGO_BIN_EXE_margin")`; isolate config with `.env("MARGIN_CONFIG", ...)` |
-| Benchmarks | `*/benches/` (criterion) | budgets: first frame <50ms, scroll <16ms |
+| Perf budgets | `*/tests/perf_budgets.rs` + `highlight.rs` budget test | workload completion with exact asserts + hang-detector budgets (enforced); criterion `*/benches/` is informational measurement only |
 | Fuzz | `fuzz/fuzz_targets/` | `./fuzz/seed.sh` first, then `cargo +nightly fuzz run <parse_unified\|strip_ansi\|intraline>` (needs `cargo install cargo-fuzz`); weekly CI + smoke on parser PRs; crashes become corpus fixtures |
 
 ## Gotchas (each of these cost a debugging session)
@@ -148,11 +149,10 @@ Dependency rule (compiler-enforced, do not work around):
 
 ## Workflow
 
-- Issues carry acceptance criteria; comment to claim. Milestone labels
-  `M1`/`M2` track v0.1/v0.2.
+- Issues carry acceptance criteria; comment to claim. The `v0.6.0` milestone tracks the trust release; stale feature work is parked, not active.
 - Conventional Commit titles (`feat:`, `fix(scope):`, ...); squash-merge —
-  the PR title becomes the shipped commit and the changelog line.
-- Update `CHANGELOG.md` under `[Unreleased]` for user-visible changes.
+  the PR title becomes the shipped commit and the changelog line (git-cliff
+  generates `CHANGELOG.md` from titles at release time — write for that reader).
 - Significant decisions (reversal cost > a day, or "why is it this way?")
   get an ADR via `docs/adr/template.md`.
 - If your change alters commands, architecture, conventions, or adds a

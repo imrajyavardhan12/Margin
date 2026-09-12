@@ -1,7 +1,7 @@
 # Configuration
 
 Margin needs zero configuration; everything below is optional. Config keys
-are a stability surface (ADR-0011): renames get a deprecation cycle.
+are a stability surface (ADR-0021): renames get a deprecation cycle.
 
 ## Files and precedence
 
@@ -13,7 +13,9 @@ Later sources win:
    on Windows). Set `$MARGIN_CONFIG` to point at an explicit file.
 3. **Repo config**: `.margin.toml` at the repository root (searched upward
    from the working directory, stopping at the `.git` boundary)
-4. CLI flags: `--theme`, `--layout`, `--no-untracked`
+4. CLI flags: `--theme`, `--layout`, `--no-untracked`, `--no-mouse`.
+   `collapse` and custom themes are file-only; `--discard-without-backup`
+   is flag-only by design (ADR-0017) and never stored.
 
 Inspect the merged result with `margin --dump-config`.
 

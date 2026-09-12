@@ -101,7 +101,7 @@ margin diff --staged          # review what's staged
 margin show HEAD~1            # review a commit
 margin diff main..feature     # review a range
 margin diff old.rs new.rs     # compare two files
-git diff | margin             # review any unified diff from stdin
+git diff | margin patch      # review any unified diff from stdin
 margin pr 123                 # review a GitHub PR (via the gh CLI)
 margin diff --json | jq       # structured changeset for scripts and agents
 ```
@@ -149,8 +149,10 @@ difftastic; for whole-repo management, gitui/lazygit are excellent.
 
 `~/.config/margin/config.toml` (user) and `.margin.toml` (repo, display
 options only — a checked-out repo can never change Margin's behavior).
-Everything has a CLI flag too; `margin --dump-config` shows the merged
-result. See [docs/configuration.md](docs/configuration.md) and
+Most keys have a CLI flag too (`--theme`, `--layout`, `--no-untracked`,
+`--no-mouse`); `collapse` and custom themes are file-only, and
+`--discard-without-backup` is flag-only by design. `margin --dump-config`
+shows the merged result. See [docs/configuration.md](docs/configuration.md) and
 [docs/themes.md](docs/themes.md).
 
 ```toml

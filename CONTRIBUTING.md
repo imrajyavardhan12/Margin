@@ -6,9 +6,9 @@ merged PR.
 ## Dev setup (3 commands)
 
 ```bash
-git clone https://github.com/imrajyavardhan12/Margin && cd margin
+git clone https://github.com/imrajyavardhan12/Margin && cd Margin
 cargo test --workspace          # everything runs headless, no terminal needed
-cargo run -p margin             # run the binary against this repo
+cargo run -p margin-review      # run the binary against this repo
 ```
 
 Requirements: stable Rust (rustup picks it up from `rust-toolchain.toml`).
@@ -90,7 +90,7 @@ Rules enforced by the `action pins + lint` CI job (a required check):
 
 - No mutable action reference (`@v6`, `@stable`, branch names) merges.
 - Every pinned action keeps its version comment.
-- `actionlint` passes on the four hand-written workflows.
+- `actionlint` passes on the five hand-written workflows.
 
 Exceptions, by design:
 
@@ -102,8 +102,8 @@ Exceptions, by design:
 - `release.yml` is generated: never hand-edit it. Its pins come from
   `[dist.github-action-commits]` in `dist-workspace.toml`, which
   `cargo dist generate` emits verbatim — so re-pinning it means
-  updating the SHAs there and regenerating. `dist plan` (a required
-  check) fails if the file drifts from what dist would emit, and the
+  updating the SHAs there and regenerating. `dist plan` runs on every
+  PR and fails if the file drifts from what dist would emit, and the
   SHA check enforces pins on the generated output too. Generated
   lines carry no version comments (dist emits none); the SHAs in
   `dist-workspace.toml` are the readable record.
@@ -124,8 +124,11 @@ on the issue to claim it; ask questions there — response SLA is ~48h.
    strategy in `docs/architecture.md`).
 2. `git cliff --tag vX.Y.Z-rc.N` → review `CHANGELOG.md` and publish a release
    candidate through cargo-dist.
-3. Verify Homebrew, installer-script, archive, completions, and man-page paths
-   from release artifacts on clean macOS, Linux, and Windows environments.
+3. The Smoke workflow already proves packaged archives, installer template,
+   Homebrew, completions, and man pages on all three platforms (required
+   checks). Manually verify what it cannot: Windows installer execution,
+   musl archive spot-checks, and installer runs against the candidate's
+   own (newly published) URLs.
 4. Run the release's documented beta scenario. For v0.6, record at least five
    independent testers and allow at least seven days without an unresolved
    critical or high-impact defect.

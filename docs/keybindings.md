@@ -1,8 +1,9 @@
 # Keybindings
 
 Margin is keyboard-first with a vim grammar. Press `?` in the app for this
-list. Keybindings are a stability surface (ADR-0011): they only change with
-a deprecation cycle, and custom keymaps are planned post-v0.3.
+list. Keybindings are a stability surface (ADR-0021): they only change with
+a deprecation cycle. The key set is fixed — there is no custom-keymap
+surface yet.
 
 ## Navigation
 

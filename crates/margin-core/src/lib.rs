@@ -1,7 +1,7 @@
 //! # margin-core
 //!
 //! The pure heart of Margin: the changeset data model, the unified-diff
-//! parser, and (coming) intra-line diffing.
+//! parser, and intra-line diffing.
 //!
 //! ## Contract (ADR 0003, ADR 0004)
 //!
@@ -21,7 +21,7 @@
 //! Changeset            // one review session's worth of changes
 //! └── FileDiff         // old/new path, status (added/deleted/renamed/...), mode
 //!     └── Hunk         // @@ header, old/new line ranges
-//!         └── Line     // context / addition / deletion (+ intra-line spans, later)
+//!         └── Line     // context / addition / deletion + intra-line spans
 //! ```
 
 pub mod ansi;

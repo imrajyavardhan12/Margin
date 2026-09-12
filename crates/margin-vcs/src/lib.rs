@@ -1,22 +1,28 @@
 //! # margin-vcs
 //!
-//! Every way a changeset can enter Margin, behind one trait.
+//! Every way a changeset can enter Margin, behind one trait — plus every
+//! way a review can write back, behind one transaction each.
 //!
-//! ## Contract (ADR 0004, ADR 0005)
+//! ## Contract (ADR 0004, ADR 0005, ADR 0019)
 //!
-//! [`DiffSource`] is the *only* seam between Margin and the outside world.
-//! The TUI never talks to git, the filesystem, or stdin directly — it asks a
-//! source for a [`Changeset`] and renders it. Consequences:
+//! [`DiffSource`] is the read-only changeset Interface: the TUI never
+//! talks to git, the filesystem, or stdin directly — it asks a source
+//! for a [`Changeset`] and renders it. Writes are separate explicit
+//! seams in this same crate (ADR-0019): index writes
+//! ([`apply_patch_to_index`]), the recoverable discard transaction
+//! ([`discard_hunk`]), and trash undo ([`undo_last_discard`]).
+//! Consequences:
 //!
-//! - New inputs (Jujutsu, GitHub PRs, watch mode) are new `DiffSource` impls,
-//!   not new code paths through the app.
+//! - New inputs (Jujutsu, watch mode) are new `DiffSource` impls, not new
+//!   code paths through the app.
 //! - Tests inject synthetic sources; the TUI is testable without a repo.
 //! - git2 stays quarantined in this crate (ADR 0005): no git2 types appear
 //!   in any public signature, so a future migration to gitoxide touches one
 //!   module.
 //!
-//! Implemented: [`GitWorktree`], [`GitStaged`], [`GitShow`], [`GitRevRange`].
-//! Coming with issue #5: `TwoFiles`, `PatchInput`.
+//! Implemented inputs: [`GitWorktree`], [`GitStaged`], [`GitShow`],
+//! [`GitRevRange`], [`TwoFiles`], [`GhPr`]. Patch/stdin/pager reviews
+//! carry a snapshot [`Changeset`] with no source — session-only by design.
 
 mod discard;
 mod files;
