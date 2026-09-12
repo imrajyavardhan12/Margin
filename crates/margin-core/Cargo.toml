@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["diff", "git", "parser"]
+categories = ["parser-implementations", "development-tools"]
 
 [dependencies]
 # Kept I/O-free by design (ADR 0003/0004). Allowed deps: data-only crates.

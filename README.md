@@ -61,17 +61,23 @@ brew install imrajyavardhan12/tap/margin
 curl -fsSL https://github.com/imrajyavardhan12/Margin/releases/latest/download/margin-installer.sh | sh
 
 # or build from source
-cargo install --git https://github.com/imrajyavardhan12/Margin margin
+cargo install --git https://github.com/imrajyavardhan12/Margin margin-review
 ```
-
-(The `margin` name on crates.io belongs to an unrelated project, so there is
-no registry package — install via Homebrew, the scripts, or `--git`.)
 
 Windows (PowerShell):
 
 ```powershell
 irm https://github.com/imrajyavardhan12/Margin/releases/latest/download/margin-installer.ps1 | iex
 ```
+
+Rust developers will be able to `cargo install margin-review` starting
+with the first published release (v0.6); until then, use Homebrew, the
+scripts, or `--git` above. Note the package/command split: the registry
+package is `margin-review`, the installed command is `margin` — while
+plain `cargo install margin` fetches an unrelated project of the same
+name, so always include the `-review` suffix. (Release artifacts from
+v0.6 on use the `margin-review-*` installer and archive names; the
+Homebrew formula stays `margin`.)
 
 ### Shell completions & man page
 

@@ -12,6 +12,10 @@ installers = ["shell", "powershell", "homebrew"]
 # The Homebrew tap the formula publishes to (issue #9). The release
 # workflow authenticates with the HOMEBREW_TAP_TOKEN repo secret.
 tap = "imrajyavardhan12/homebrew-tap"
+# Keep the formula named `margin` (matching the binary) while the
+# registry package is `margin-review` (ADR-0025): existing `brew install
+# .../margin` keeps working across releases.
+formula = "margin"
 # Publish the formula as part of the release pipeline
 publish-jobs = ["homebrew"]
 # Target platforms to build apps for (Rust target-triple syntax)

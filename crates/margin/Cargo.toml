@@ -1,11 +1,15 @@
 [package]
-name = "margin"
+# Registry identity (ADR-0025): the `margin` name belongs to an unrelated
+# project, so the executable package publishes as `margin-review`. The
+# installed command stays `margin` via [[bin]] below.
+name = "margin-review"
 description = "A fast, keyboard-first terminal diff viewer for Git changes, patches, and AI-authored code."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "../../README.md"
 keywords.workspace = true
 categories.workspace = true
 

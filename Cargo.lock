@@ -1143,7 +1143,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "margin"
+name = "margin-core"
+version = "0.5.1"
+dependencies = [
+ "criterion",
+ "serde",
+ "serde_json",
+ "similar 3.2.0",
+]
+
+[[package]]
+name = "margin-review"
 version = "0.5.1"
 dependencies = [
  "clap",
@@ -1159,16 +1169,6 @@ dependencies = [
  "tempfile",
  "terminal-colorsaurus",
  "toml",
-]
-
-[[package]]
-name = "margin-core"
-version = "0.5.1"
-dependencies = [
- "criterion",
- "serde",
- "serde_json",
- "similar 3.2.0",
 ]
 
 [[package]]
