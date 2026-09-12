@@ -44,10 +44,20 @@ is correspondingly fuzzed and corpus-tested (ADR-0010).
 ## Performance strategy
 
 Parse eagerly (cheap, linear). Highlight and intra-line-diff **lazily** —
-only what scrolls into view, cached per file, warmed by a background thread
-(ADR-0006). The input loop never blocks on rendering work. Budgets
-(< 50 ms first paint on 100 files; smooth 250k-line scrolling) are encoded in
-criterion benches and guarded in CI.
+only what the current frame requests, cached per file, bounded by a
+per-frame budget with unfinished work resuming across fill-in frames
+(ADR-0006, ADR-0026: there is no background warming thread). The input
+loop never blocks on rendering work.
+
+Budgets (< 50 ms first paint on 100 files; smooth 250k-line scrolling)
+are enforced in CI by workload completion tests with exact result
+assertions (`crates/margin-core/tests/perf_budgets.rs`,
+`crates/margin-tui/tests/perf_budgets.rs`) plus the deterministic
+budget-exhaustion test in `highlight.rs`. The criterion benches
+(`parse/*`, `first_frame/*`, `scroll_frame/*`, `search_keystroke/*` —
+run with `cargo bench -p margin-core` / `-p margin-tui`) are
+informational observations for local comparison, not gates: shared
+runners cannot make statistically trustworthy timing decisions.
 
 ## Where things live
 

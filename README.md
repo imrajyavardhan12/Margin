@@ -25,9 +25,12 @@ file off — then hand the notes back as Markdown.*
 ## Why margin
 
 - **Instant.** Rust, single binary. First paint in ~4 ms on a 100-file/10k-line
-  diff and ~15 ms on a 250k-line lockfile monster (measured, release build,
-  criterion — budgets enforced in CI). Syntax highlighting is budgeted per
-  frame, so no diff can ever freeze the UI.
+  diff and ~15 ms on a 250k-line lockfile monster (measured, release build
+  on Apple Silicon — reproduce with `cargo bench -p margin-tui`; the
+  `parse/*` workloads live in `cargo bench -p margin-core`). Workload
+  completion is enforced by CI tests; criterion numbers are observations,
+  not gates. Syntax highlighting is budgeted per frame, so no diff can
+  ever freeze the UI.
 - **Keyboard-first.** Vim-grammar navigation, `/` search across the whole
   changeset, fuzzy file jump. Review without touching the mouse — though the
   mouse works too if you want it.
