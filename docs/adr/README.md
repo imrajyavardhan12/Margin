@@ -47,3 +47,4 @@ questions or, worse, silently unsettle them.
 | [0023](0023-tool-neutral-agent-boundary.md) | Tool-neutral human review boundary through 1.0 | Accepted |
 | [0024](0024-sha-pinned-ci-supply-chain.md) | SHA-pinned, least-privilege CI supply chain | Accepted |
 | [0025](0025-crates-io-package-identity.md) | Publish the Margin binary as the `margin-review` package | Accepted |
+| [0026](0026-no-background-highlight-warming.md) | Highlight warming is per-frame budgeted fill-in, not a background thread | Accepted |

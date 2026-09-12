@@ -118,8 +118,10 @@ on the issue to claim it; ask questions there — response SLA is ~48h.
 
 ## Releasing (maintainers)
 
-1. CI is green on `main`; benchmark smoke tests remain within their documented
-   budgets (ADR-0010).
+1. CI is green on `main`; the enforced perf-budget tests pass and a local
+   `cargo bench` smoke shows no surprising movement against the documented
+   observations (benches are informational, not gates — see the performance
+   strategy in `docs/architecture.md`).
 2. `git cliff --tag vX.Y.Z-rc.N` → review `CHANGELOG.md` and publish a release
    candidate through cargo-dist.
 3. Verify Homebrew, installer-script, archive, completions, and man-page paths
