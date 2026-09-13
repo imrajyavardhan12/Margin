@@ -9,10 +9,14 @@ should see; anything else is a defect worth reporting.
 ```bash
 rm -rf /tmp/margin-beta && mkdir /tmp/margin-beta && cd /tmp/margin-beta
 git init -q && git config user.email beta@example.com && git config user.name Beta
-printf 'one\ntwo\nthree\nfour\nfive\nsix\n' > notes.txt
+printf 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n' > notes.txt
 git add . && git commit -qm base
-printf 'one\nTWO edited\nthree\nfour\nFIVE edited\nsix\n' > notes.txt
+printf 'one\nTWO edited\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\nELEVEN edited\ntwelve\n' > notes.txt
 ```
+
+The two edits are far enough apart to form two separate hunks (steps 2–4
+need both: one to act on, one left over). Confirm with
+`margin diff --json | jq '.files[0].hunks | length'` → `2`.
 
 ## 1. Install (pick one)
 
