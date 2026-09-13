@@ -15,7 +15,7 @@ reviews ordinary Git changes, staged work, revisions, and patches.
 *Read the diff, stage the good part, leave a note on the rest, check the
 file off — then hand the notes back as Markdown.*
 
-> **Status: v0.5.1.** Everything above works today. The review loop
+> **Status: v0.6.0-rc.1** (trust-release candidate). Everything above works today. The review loop
 > (stage/unstage/discard by hunk, mark viewed, review notes), GitHub PR
 > review through your own `gh`, watch mode, JSON output, four themes plus
 > custom ones, and a byte-identical pager mode. Rough edges and missing
