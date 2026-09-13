@@ -61,7 +61,8 @@ v0.6 first ships as `v0.6.0-rc.1`. Stable `v0.6.0` requires:
 
 - clean release-artifact installation on macOS, Linux, and Windows;
 - at least five independent testers completing the disposable-repository trust
-  scenario (stage, unstage, discard, undo, notes, watch, terminal cleanup);
+  scenario ([docs/trust-scenario.md](docs/trust-scenario.md): install, stage,
+  unstage, discard, undo, notes, watch, terminal cleanup);
 - at least seven days without an unresolved critical or high-impact defect;
 - no candidate-period changes except fixes and documentation.
 

@@ -7,7 +7,7 @@ body:
     attributes:
       label: Margin version
       description: Output of `margin --version`
-      placeholder: margin 0.5.1
+      placeholder: margin 0.6.0-rc.1
     validations:
       required: true
   - type: input

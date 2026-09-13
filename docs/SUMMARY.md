@@ -8,6 +8,7 @@
 - [Configuration](configuration.md)
 - [Themes](themes.md)
 - [JSON output](json-output.md)
+- [Trust scenario (beta testing)](trust-scenario.md)
 
 # Under the hood
 
