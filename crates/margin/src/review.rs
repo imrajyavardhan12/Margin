@@ -465,10 +465,8 @@ fn start_watcher(
     ));
     let signal = std::sync::Arc::clone(&handle);
     let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
-        if let Ok(event) = res {
-            if event.paths.iter().any(|p| watch_relevant(p)) {
-                signal.notify();
-            }
+        if res.as_ref().is_ok_and(watch_event_relevant) {
+            signal.notify();
         }
     })
     .map_err(|e| e.to_string())?;
@@ -476,6 +474,20 @@ fn start_watcher(
         .watch(&root, notify::RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
     Ok((handle, watcher))
+}
+
+/// Whether a file-system event may have changed the review. Reads never
+/// do: Linux inotify reports every open, and a reload opens the index,
+/// HEAD, and each changed file, so counting reads made every reload
+/// schedule the next. A completed write (close-after-write) still counts.
+fn watch_event_relevant(event: &notify::Event) -> bool {
+    use notify::event::{AccessKind, AccessMode, EventKind};
+    let may_change = match event.kind {
+        EventKind::Access(AccessKind::Close(AccessMode::Write)) => true,
+        EventKind::Access(_) => false,
+        _ => true,
+    };
+    may_change && event.paths.iter().any(|p| watch_relevant(p))
 }
 
 fn watch_relevant(path: &Path) -> bool {
@@ -843,5 +855,52 @@ mod tests {
         assert!(!watch_relevant(Path::new(
             "/repo/.git/margin/trash/1.patch"
         )));
+    }
+
+    /// Reads are not changes. Linux inotify reports every open, and a
+    /// reload opens the index, HEAD, and every changed file — so counting
+    /// opens made each reload schedule the next, forever: constant CPU on
+    /// an idle repository and status feedback overwritten by "reloaded".
+    #[test]
+    fn watch_ignores_reads_so_reloads_cannot_feed_themselves() {
+        use notify::event::{
+            AccessKind, AccessMode, CreateKind, DataChange, EventKind, ModifyKind, RemoveKind,
+        };
+        let event =
+            |kind: EventKind, path: &str| notify::Event::new(kind).add_path(PathBuf::from(path));
+        for read in [
+            AccessKind::Open(AccessMode::Any),
+            AccessKind::Read,
+            AccessKind::Close(AccessMode::Read),
+            AccessKind::Any,
+        ] {
+            assert!(
+                !watch_event_relevant(&event(EventKind::Access(read), "/repo/src/main.rs")),
+                "{read:?}"
+            );
+            assert!(!watch_event_relevant(&event(
+                EventKind::Access(read),
+                "/repo/.git/index"
+            )));
+        }
+        for change in [
+            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+            EventKind::Create(CreateKind::File),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Access(AccessKind::Close(AccessMode::Write)),
+            EventKind::Any,
+        ] {
+            assert!(
+                watch_event_relevant(&event(change, "/repo/src/main.rs")),
+                "{change:?}"
+            );
+        }
+        assert!(
+            !watch_event_relevant(&event(
+                EventKind::Modify(ModifyKind::Any),
+                "/repo/.git/objects/ab/cdef"
+            )),
+            "path filter still applies"
+        );
     }
 }
