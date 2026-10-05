@@ -83,6 +83,11 @@ margin -w
 
 From another terminal in the same repo: `printf 'seven\n' >> notes.txt`.
 The review reloads within a second (status bar shows `[watch]`).
+
+Then press `c` on a hunk and start typing; while you type, create a new
+file from the other terminal (`printf 'x\n' > aaa.txt`). The review waits
+until you press Enter, and the note stays on the hunk you chose — not on
+`aaa.txt`.
 Quit with `q`.
 
 ## 7. Terminal cleanup
