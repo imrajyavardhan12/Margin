@@ -28,7 +28,7 @@ body:
         (`git diff > repro.patch`, scrubbed of anything private) lets us turn
         your bug directly into a permanent regression test in `tests/corpus/`.
       placeholder: |
-        1. `git diff | margin`
+        1. `git diff | margin patch`
         2. press `J` twice
         3. ...
     validations:

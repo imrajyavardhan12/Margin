@@ -147,7 +147,7 @@ margin diff --staged        <span class="c"># what's staged</span>
 margin show HEAD~1          <span class="c"># one commit</span>
 margin diff main..feature   <span class="c"># a range</span>
 margin diff old.rs new.rs   <span class="c"># two files, no repo needed</span>
-git diff | margin           <span class="c"># any unified diff on stdin</span>
+git diff | margin patch     <span class="c"># any unified diff on stdin</span>
 margin pr 123               <span class="c"># a GitHub PR, through your own gh</span>
 
 margin --json | jq          <span class="c"># structured changeset for scripts</span>

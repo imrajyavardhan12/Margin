@@ -21,8 +21,9 @@ use crate::view::view;
 ///
 /// The binary's file-system watcher calls [`WatchHandle::notify`] from its
 /// event thread; the event loop polls [`WatchHandle::take_due`] and issues
-/// one `Msg::Reload` — the same message as `r`, so auto-reload is the
-/// existing `DiffSource` capability, not a TUI special case — once a quiet
+/// one `Msg::WatchReload` — the same `Command::Reload` as `r`, so
+/// auto-reload is the existing `DiffSource` capability, not a TUI special
+/// case (only the feedback differs: it is not an interaction) — once a quiet
 /// window has passed since the *last* event. Rapid agent writes collapse
 /// into a single reload: no storms.
 ///
@@ -251,10 +252,17 @@ pub fn run(
 
 /// One message through the core; any requested effect executes and its
 /// outcome feeds straight back in as a message (the command loop).
+/// Run `msg` and any commands it leads to. A finished command may owe a
+/// follow-up (a reload that re-keyed notes persists them); persistence
+/// results owe nothing, so chains are short — the cap only guards against
+/// a future loop, never the normal path.
 fn dispatch(state: &mut AppState, msg: Msg, executor: &mut dyn CommandExecutor) {
-    if let Some(command) = update(state, msg) {
+    const MAX_FOLLOW_UPS: usize = 4;
+    let mut next = update(state, msg);
+    for _ in 0..=MAX_FOLLOW_UPS {
+        let Some(command) = next else { return };
         let result = executor.execute(command);
-        update(state, Msg::CommandFinished(result));
+        next = update(state, Msg::CommandFinished(result));
     }
 }
 
@@ -322,11 +330,11 @@ fn event_loop(
         // After input (or a tick): a debounced watch signal becomes the
         // same reload `r` performs. Skipped while a modal overlay is open —
         // a reload must never yank the world out from under a typed
-        // confirmation or a picker mid-choice (the signal keeps
-        // accumulating and fires once the overlay closes).
+        // confirmation, a picker mid-choice, or a note being written (the
+        // signal keeps accumulating and fires once the overlay closes).
         if let Some(handle) = watch {
-            if state.confirm.is_none() && state.picker.is_none() && handle.take_due() {
-                dispatch(state, Msg::Reload, executor);
+            if !state.defers_background_reload() && handle.take_due() {
+                dispatch(state, Msg::WatchReload, executor);
                 needs_draw = true;
             }
         }

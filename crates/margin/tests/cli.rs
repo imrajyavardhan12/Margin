@@ -10,6 +10,19 @@ fn margin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_margin"))
 }
 
+/// Write `bytes` to the child's stdin and close it. Refusals (bad config,
+/// invalid invocation) legitimately exit before reading a byte; the closed
+/// pipe that leaves behind is the child's answer, not a test failure.
+fn feed_stdin(child: &mut std::process::Child, bytes: &[u8]) {
+    let mut stdin = child.stdin.take().expect("stdin handle");
+    match stdin.write_all(bytes) {
+        Err(err) if err.kind() != std::io::ErrorKind::BrokenPipe => {
+            panic!("write stdin: {err}")
+        }
+        _ => {}
+    }
+}
+
 fn run_with_stdin(args: &[&str], stdin_bytes: &[u8]) -> Output {
     let mut child = margin()
         .args(args)
@@ -18,12 +31,7 @@ fn run_with_stdin(args: &[&str], stdin_bytes: &[u8]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn margin");
-    child
-        .stdin
-        .take()
-        .expect("stdin handle")
-        .write_all(stdin_bytes)
-        .expect("write stdin");
+    feed_stdin(&mut child, stdin_bytes);
     child.wait_with_output().expect("wait for margin")
 }
 
@@ -376,7 +384,7 @@ fn auto_theme_is_the_default_and_piped_runs_fall_back() {
         .stderr(Stdio::piped())
         .spawn()
         .map(|mut child| {
-            child.stdin.take().unwrap().write_all(patch).unwrap();
+            feed_stdin(&mut child, patch);
             child.wait_with_output().unwrap()
         })
         .unwrap();
@@ -411,7 +419,7 @@ fn custom_theme_selects_and_bad_colors_error() {
         .stderr(Stdio::piped())
         .spawn()
         .map(|mut child| {
-            child.stdin.take().unwrap().write_all(patch).unwrap();
+            feed_stdin(&mut child, patch);
             child.wait_with_output().unwrap()
         })
         .unwrap();
@@ -445,12 +453,7 @@ fn run_with_stdin_env(args: &[&str], stdin_bytes: &[u8], config: &std::path::Pat
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn margin");
-    child
-        .stdin
-        .take()
-        .expect("stdin handle")
-        .write_all(stdin_bytes)
-        .expect("write stdin");
+    feed_stdin(&mut child, stdin_bytes);
     child.wait_with_output().expect("wait for margin")
 }
 
@@ -504,7 +507,7 @@ fn unknown_theme_exits_2_listing_builtins() {
         .stderr(Stdio::piped())
         .spawn()
         .map(|mut child| {
-            child.stdin.take().unwrap().write_all(patch).unwrap();
+            feed_stdin(&mut child, patch);
             child.wait_with_output().unwrap()
         })
         .unwrap();
@@ -888,4 +891,195 @@ fn undo_outside_a_repo_exits_1() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
+}
+
+/// A repo with one staged edit (`f.txt`) and one unstaged edit
+/// (`g.txt`), so a review's source is visible in which files it lists.
+fn staged_and_unstaged_repo() -> tempfile::TempDir {
+    let dir = undo_repo();
+    std::fs::write(dir.path().join("g.txt"), "x\n").unwrap();
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let mut index = repo.index().unwrap();
+    index.add_path(std::path::Path::new("g.txt")).unwrap();
+    index.write().unwrap();
+    let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+    let sig = repo.signature().unwrap();
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "g", &tree, &[&head])
+        .unwrap();
+    std::fs::write(dir.path().join("f.txt"), "one\nSTAGED\n").unwrap();
+    index.add_path(std::path::Path::new("f.txt")).unwrap();
+    index.write().unwrap();
+    std::fs::write(dir.path().join("g.txt"), "x\nUNSTAGED\n").unwrap();
+    dir
+}
+
+fn json_paths(stdout: &[u8]) -> Vec<String> {
+    let doc: serde_json::Value = serde_json::from_slice(stdout).expect("valid JSON");
+    doc["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["new_path"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// Root-level `--staged` / `-w` must never be dropped on the floor: a
+/// review of a different changeset than the one asked for is the worst
+/// failure a review tool has. `diff` honors them; verbs that cannot
+/// refuse loudly (ADR-0007); pager keeps its passthrough contract.
+#[test]
+fn root_review_flags_apply_to_diff_or_refuse() {
+    let dir = staged_and_unstaged_repo();
+    let run = |args: &[&str]| {
+        margin()
+            .current_dir(dir.path())
+            .env("MARGIN_CONFIG", dir.path().join("none.toml"))
+            .env("MARGIN_DATA", dir.path().join("data"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let out = run(&["--json", "diff", "--staged"]);
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(json_paths(&out.stdout), ["f.txt"], "baseline: staged only");
+
+    let out = run(&["--staged", "diff", "--json"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        json_paths(&out.stdout),
+        ["f.txt"],
+        "root --staged must select the index, not the working tree"
+    );
+
+    let out = run(&["-w", "diff", "--json"]);
+    assert_eq!(out.status.code(), Some(2), "root -w reaches diff's refusal");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--watch"));
+
+    for (args, flag) in [
+        (&["--staged", "show", "--json"][..], "--staged"),
+        (&["-w", "show", "--json"][..], "--watch"),
+        (&["--staged", "pr", "1"][..], "--staged"),
+        (&["-w", "undo"][..], "--watch"),
+        // `undo` writes the worktree: a document flag must not vanish
+        // while a real write happens instead.
+        (&["--json", "undo"][..], "--json"),
+        (&["--notes", "undo"][..], "--notes"),
+    ] {
+        let out = run(args);
+        assert_eq!(out.status.code(), Some(2), "{args:?}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(flag), "{args:?}: {stderr}");
+    }
+    let out = run_with_stdin(&["--staged", "patch"], b"x\n");
+    assert_eq!(out.status.code(), Some(2));
+
+    // Pager passthrough outranks everything (ADR-0007): a stray root
+    // flag must not turn `git log | grep` into an error.
+    let bytes: &[u8] = b"\x1b[1mcommit abc\x1b[m\n";
+    let out = run_with_stdin(&["--staged", "-w", "pager"], bytes);
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(out.stdout, bytes);
+}
+
+/// Issue #119 / ADR-0027, the half a test harness can see: document
+/// modes and piped summaries never refuse redirected stdin. Scripts, git
+/// hooks, ssh, and agent subprocesses routinely hand over a stdin pipe
+/// that means nothing, and `margin --json` must keep working for them.
+#[test]
+fn documents_and_summaries_ignore_redirected_stdin() {
+    let dir = staged_and_unstaged_repo();
+    // Outside the repo, or it would show up as an untracked file.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let file = elsewhere.path().join("in.patch");
+    std::fs::write(
+        &file,
+        b"--- a.txt\n+++ b.txt\n@@ -1,1 +1,1 @@\n-old\n+new\n",
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        margin()
+            .current_dir(dir.path())
+            .env("MARGIN_CONFIG", dir.path().join("none.toml"))
+            .env("MARGIN_DATA", dir.path().join("data"))
+            .args(args)
+            .stdin(std::fs::File::open(&file).unwrap())
+            .output()
+            .unwrap()
+    };
+    let out = run(&["--json"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(json_paths(&out.stdout), ["f.txt", "g.txt"]);
+    assert_eq!(run(&["--notes"]).status.code(), Some(0));
+    assert_eq!(run(&[]).status.code(), Some(0), "piped summary");
+    assert_eq!(run(&["--dump-config"]).status.code(), Some(0));
+}
+
+/// Issue #119 / ADR-0027, the interactive half: on a terminal,
+/// `git diff | margin` used to open a review of the working tree and
+/// silently drop the pipe. It refuses (exit 2) before touching the
+/// terminal, naming both explicit forms. Driven through a real pty with
+/// util-linux `script`; a kill timer keeps a regression (the TUI opening
+/// and waiting for keys) from hanging the suite.
+#[cfg(target_os = "linux")]
+#[test]
+fn bare_invocation_on_a_terminal_refuses_redirected_stdin() {
+    if Command::new("script").arg("--version").output().is_err() {
+        eprintln!("skipping: util-linux `script` is not installed");
+        return;
+    }
+    let dir = staged_and_unstaged_repo();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let file = elsewhere.path().join("in.patch");
+    std::fs::write(&file, "x\n").unwrap();
+    let bin = env!("CARGO_BIN_EXE_margin");
+    for (shell, hint) in [
+        (format!("printf x | '{bin}'"), "margin diff"),
+        (format!("'{bin}' < '{}'", file.display()), "margin diff"),
+        (
+            format!("printf x | '{bin}' --staged"),
+            "margin diff --staged",
+        ),
+    ] {
+        let mut child = Command::new("script")
+            .args(["-qec", &shell, "/dev/null"])
+            .current_dir(dir.path())
+            .env("MARGIN_CONFIG", dir.path().join("none.toml"))
+            .env("MARGIN_DATA", dir.path().join("data"))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() > deadline {
+                child.kill().unwrap();
+                panic!("{shell}: margin opened instead of refusing");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let out = child.wait_with_output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert_eq!(out.status.code(), Some(2), "{shell}: {text}");
+        assert!(
+            text.contains("margin patch") && text.contains(hint),
+            "{shell}: {text}"
+        );
+        assert!(
+            text.starts_with("margin:"),
+            "{shell}: nothing (no theme query) may reach the terminal first: {text:?}"
+        );
+    }
 }

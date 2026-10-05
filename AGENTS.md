@@ -140,6 +140,18 @@ Dependency rule (compiler-enforced, do not work around):
   screen without painting a single cell, and exit 0 "proves" nothing.
   Wrap the binary: `script -q /dev/null sh -c "stty rows 24 cols 80;
   ./target/debug/margin ..."`, then assert on emitted SGR sequences.
+- **Index-keyed state goes stale on reload.** Notes, the note editor,
+  and the cursor anchor are keyed by `(file, hunk)` *position*, and a
+  reload (watch, stage, discard) reorders files and hunks. Anything
+  positional must be re-found by identity in `absorb_changeset` (path +
+  `hunk_digest`, falling back to lines unique in the file) — otherwise
+  feedback silently lands on another hunk. A re-keyed note must also be
+  persisted (`finish_command` returns the save; `dispatch` chains it).
+- **inotify reports reads.** `notify` on Linux emits `Access(Open)` for
+  every file Margin itself opens, so a watcher that ignores event kinds
+  turns each reload into the trigger for the next (an idle CPU loop that
+  also wipes status feedback). `watch_event_relevant` filters by kind;
+  keep it that way.
 - Windows CI is real: key handling filters `KeyEventKind::Press` (Windows
   sends Release too), and autocrlf corrupts anything not guarded by
   `.gitattributes`. Temp-repo tests that write the **worktree** through
