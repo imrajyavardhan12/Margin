@@ -218,12 +218,48 @@ fn main() -> ExitCode {
         );
         return ExitCode::from(2);
     };
-    let command = cli.command.unwrap_or(Command::Diff(DiffArgs {
-        staged: cli.staged,
-        watch: cli.watch,
-        json: cli.json,
-        targets: Vec::new(),
-    }));
+    // Root `--staged`/`-w` describe a working-tree review. Reviewing a
+    // different changeset than the one asked for is the worst failure a
+    // review tool has, so they reach `diff` or refuse loudly (ADR-0007) —
+    // never vanish. Pager is exempt: its passthrough contract outranks
+    // any flag (`git log | grep` must never fail on our account).
+    let command = match cli.command {
+        None => {
+            // Issue #119: `git diff | margin` would review the working
+            // tree and drop the pipe. Ambiguous intent refuses; it does
+            // not guess (and reading stdin here could eat a script's input).
+            if stdin_is_redirected() {
+                eprintln!(
+                    "margin: stdin is redirected, but `margin` alone reviews the working tree\n  \
+                     review the diff on stdin:  ... | margin patch\n  \
+                     review the working tree:   margin diff"
+                );
+                return ExitCode::from(2);
+            }
+            Command::Diff(DiffArgs {
+                staged: cli.staged,
+                watch: cli.watch,
+                json: cli.json,
+                targets: Vec::new(),
+            })
+        }
+        Some(Command::Diff(mut args)) => {
+            args.staged |= cli.staged;
+            args.watch |= cli.watch;
+            Command::Diff(args)
+        }
+        Some(Command::Pager) => Command::Pager,
+        Some(other) => {
+            if let Some(flag) = [(cli.staged, "--staged"), (cli.watch, "--watch")]
+                .into_iter()
+                .find_map(|(set, flag)| set.then_some(flag))
+            {
+                eprintln!("margin: {flag} applies only to `margin diff` reviews");
+                return ExitCode::from(2);
+            }
+            other
+        }
+    };
 
     // Pager mode never emits JSON: its piped output is byte-identical by
     // contract (ADR-0007), and interactively it is a review, not a query.
@@ -453,6 +489,39 @@ fn report_warnings(warnings: &[ParseWarning]) {
     }
     if warnings.len() > SHOWN {
         eprintln!("margin: ...and {} more warnings", warnings.len() - SHOWN);
+    }
+}
+
+/// Whether stdin carries input someone meant for us: a pipe, a socket, or
+/// a redirected file. A terminal or a character device (`/dev/null`, what
+/// cron, CI, and agent harnesses hand over) is not input. Answered from
+/// the file type alone — stdin is never read.
+///
+/// Unix only. Windows file attributes cannot tell a redirected file from
+/// the `NUL` device without new dependencies, and a false positive would
+/// refuse every script run there, so Windows keeps the old behavior.
+fn stdin_is_redirected() -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsFd;
+        use std::os::unix::fs::FileTypeExt;
+        let stdin = std::io::stdin();
+        if stdin.is_terminal() {
+            return false;
+        }
+        stdin
+            .as_fd()
+            .try_clone_to_owned()
+            .map(std::fs::File::from)
+            .and_then(|file| file.metadata())
+            .is_ok_and(|meta| {
+                let kind = meta.file_type();
+                kind.is_file() || kind.is_fifo() || kind.is_socket()
+            })
+    }
+    #[cfg(not(unix))]
+    {
+        false
     }
 }
 
