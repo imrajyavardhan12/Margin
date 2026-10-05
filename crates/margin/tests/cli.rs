@@ -967,6 +967,10 @@ fn root_review_flags_apply_to_diff_or_refuse() {
         (&["-w", "show", "--json"][..], "--watch"),
         (&["--staged", "pr", "1"][..], "--staged"),
         (&["-w", "undo"][..], "--watch"),
+        // `undo` writes the worktree: a document flag must not vanish
+        // while a real write happens instead.
+        (&["--json", "undo"][..], "--json"),
+        (&["--notes", "undo"][..], "--notes"),
     ] {
         let out = run(args);
         assert_eq!(out.status.code(), Some(2), "{args:?}");
@@ -984,86 +988,98 @@ fn root_review_flags_apply_to_diff_or_refuse() {
     assert_eq!(out.stdout, bytes);
 }
 
-/// Issue #119: `git diff | margin` used to review the working tree and
-/// silently ignore the pipe. A bare invocation with redirected stdin is
-/// ambiguous, so it refuses (exit 2) and names both explicit forms.
-/// Non-redirected stdin (a terminal, `/dev/null`) is unaffected, and an
-/// explicit `margin diff` states its intent. Unix-only detection (see
-/// `stdin_is_redirected`).
-#[cfg(unix)]
+/// Issue #119 / ADR-0027, the half a test harness can see: document
+/// modes and piped summaries never refuse redirected stdin. Scripts, git
+/// hooks, ssh, and agent subprocesses routinely hand over a stdin pipe
+/// that means nothing, and `margin --json` must keep working for them.
 #[test]
-fn bare_invocation_refuses_redirected_stdin() {
+fn documents_and_summaries_ignore_redirected_stdin() {
     let dir = staged_and_unstaged_repo();
-    let patch = b"--- a.txt\n+++ b.txt\n@@ -1,1 +1,1 @@\n-old\n+new\n";
-    let base = || {
-        let mut cmd = margin();
-        cmd.current_dir(dir.path())
-            .env("MARGIN_CONFIG", dir.path().join("none.toml"))
-            .env("MARGIN_DATA", dir.path().join("data"));
-        cmd
-    };
-
     // Outside the repo, or it would show up as an untracked file.
     let elsewhere = tempfile::tempdir().unwrap();
     let file = elsewhere.path().join("in.patch");
-    std::fs::write(&file, patch).unwrap();
-    let out = base()
-        .arg("--json")
-        .stdin(std::fs::File::open(&file).unwrap())
-        .output()
-        .unwrap();
-    assert_eq!(out.status.code(), Some(2), "`margin < file` is ambiguous");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("margin patch") && stderr.contains("margin diff"),
-        "{stderr}"
-    );
-    assert!(out.stdout.is_empty(), "nothing reviewed");
-
-    let out = base()
-        .args(["diff", "--json"])
-        .stdin(std::fs::File::open(&file).unwrap())
-        .output()
-        .unwrap();
-    assert_eq!(out.status.code(), Some(0), "explicit diff states intent");
-
-    let out = base().arg("--json").stdin(Stdio::null()).output().unwrap();
+    std::fs::write(
+        &file,
+        b"--- a.txt\n+++ b.txt\n@@ -1,1 +1,1 @@\n-old\n+new\n",
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        margin()
+            .current_dir(dir.path())
+            .env("MARGIN_CONFIG", dir.path().join("none.toml"))
+            .env("MARGIN_DATA", dir.path().join("data"))
+            .args(args)
+            .stdin(std::fs::File::open(&file).unwrap())
+            .output()
+            .unwrap()
+    };
+    let out = run(&["--json"]);
     assert_eq!(
         out.status.code(),
         Some(0),
-        "/dev/null stdin is not input: {}",
+        "{}",
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(json_paths(&out.stdout), ["f.txt", "g.txt"]);
-
-    let out = base()
-        .arg("--dump-config")
-        .stdin(std::fs::File::open(&file).unwrap())
-        .output()
-        .unwrap();
-    assert_eq!(out.status.code(), Some(0), "not a review: unaffected");
+    assert_eq!(run(&["--notes"]).status.code(), Some(0));
+    assert_eq!(run(&[]).status.code(), Some(0), "piped summary");
+    assert_eq!(run(&["--dump-config"]).status.code(), Some(0));
 }
 
-/// The pipe half of issue #119 (`git diff | margin`).
-#[cfg(unix)]
+/// Issue #119 / ADR-0027, the interactive half: on a terminal,
+/// `git diff | margin` used to open a review of the working tree and
+/// silently drop the pipe. It refuses (exit 2) before touching the
+/// terminal, naming both explicit forms. Driven through a real pty with
+/// util-linux `script`; a kill timer keeps a regression (the TUI opening
+/// and waiting for keys) from hanging the suite.
+#[cfg(target_os = "linux")]
 #[test]
-fn bare_invocation_refuses_piped_stdin() {
+fn bare_invocation_on_a_terminal_refuses_redirected_stdin() {
+    if Command::new("script").arg("--version").output().is_err() {
+        eprintln!("skipping: util-linux `script` is not installed");
+        return;
+    }
     let dir = staged_and_unstaged_repo();
-    let mut child = margin()
-        .current_dir(dir.path())
-        .env("MARGIN_CONFIG", dir.path().join("none.toml"))
-        .env("MARGIN_DATA", dir.path().join("data"))
-        .arg("--json")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    // The refusal must not depend on reading the pipe: a writer that
-    // never closes would otherwise hang it. Keep stdin open throughout.
-    let stdin = child.stdin.take().unwrap();
-    let out = child.wait_with_output().unwrap();
-    drop(stdin);
-    assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("margin patch"));
+    let elsewhere = tempfile::tempdir().unwrap();
+    let file = elsewhere.path().join("in.patch");
+    std::fs::write(&file, "x\n").unwrap();
+    let bin = env!("CARGO_BIN_EXE_margin");
+    for (shell, hint) in [
+        (format!("printf x | '{bin}'"), "margin diff"),
+        (format!("'{bin}' < '{}'", file.display()), "margin diff"),
+        (
+            format!("printf x | '{bin}' --staged"),
+            "margin diff --staged",
+        ),
+    ] {
+        let mut child = Command::new("script")
+            .args(["-qec", &shell, "/dev/null"])
+            .current_dir(dir.path())
+            .env("MARGIN_CONFIG", dir.path().join("none.toml"))
+            .env("MARGIN_DATA", dir.path().join("data"))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() > deadline {
+                child.kill().unwrap();
+                panic!("{shell}: margin opened instead of refusing");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let out = child.wait_with_output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert_eq!(out.status.code(), Some(2), "{shell}: {text}");
+        assert!(
+            text.contains("margin patch") && text.contains(hint),
+            "{shell}: {text}"
+        );
+        assert!(
+            text.starts_with("margin:"),
+            "{shell}: nothing (no theme query) may reach the terminal first: {text:?}"
+        );
+    }
 }

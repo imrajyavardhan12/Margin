@@ -259,6 +259,16 @@ struct HunkIdentity {
     path: Vec<u8>,
     digest: u64,
     lines: Vec<Line>,
+    /// No other hunk in the file had these lines when captured.
+    unique_lines: bool,
+}
+
+/// What `absorb_changeset` changed that its caller must act on.
+struct Absorbed {
+    /// The open note editor's hunk is gone; the editor closed.
+    note_closed: bool,
+    /// A note followed a moved hunk, so its persisted key is stale.
+    notes_rekeyed: bool,
 }
 
 /// The byte path that identifies a file across diffs and reloads: the new
@@ -1087,45 +1097,50 @@ impl AppState {
         }
     }
 
-    /// Append the reason an open note editor closed under a reload, so
-    /// typed text never disappears without a word.
-    fn report_closed_note(&mut self, closed: bool) {
-        if closed {
+    /// Follow-ups a reload owes: say why an open note editor closed (typed
+    /// text never disappears without a word), and persist notes whose key
+    /// moved — otherwise they are lost on the next launch and missing from
+    /// `margin --notes`.
+    fn after_absorb(&mut self, absorbed: Absorbed) -> Option<Command> {
+        if absorbed.note_closed {
             let base = self.status_message.take().unwrap_or_default();
             self.status_message = Some(format!("{base} — note not saved: its hunk changed"));
         }
+        absorbed
+            .notes_rekeyed
+            .then(|| self.save_review_state_command())
     }
 
     /// Absorb a command outcome: swap in the fresh changeset and re-anchor
-    /// on success, report otherwise.
-    fn finish_command(&mut self, result: CommandResult) {
+    /// on success, report otherwise. Returns a follow-up command, if any.
+    fn finish_command(&mut self, result: CommandResult) -> Option<Command> {
         match result {
             CommandResult::Applied {
                 action,
                 changeset,
                 staged,
             } => {
-                let note_closed = self.absorb_changeset(changeset, staged);
+                let absorbed = self.absorb_changeset(changeset, staged);
                 self.status_message = Some(format!("hunk {}", action.past_tense()));
-                self.report_closed_note(note_closed);
+                return self.after_absorb(absorbed);
             }
             CommandResult::Reloaded { changeset, staged } => {
-                // A watcher echo of our own write finds nothing new; it
-                // must not replace feedback the reviewer has not read
-                // (`r` cleared the line on keypress, so it still answers).
-                let news = changeset != self.changeset || staged != self.staged;
-                let note_closed = self.absorb_changeset(changeset, staged);
-                if news || self.status_message.is_none() {
+                let absorbed = self.absorb_changeset(changeset, staged);
+                // Never replace feedback the reviewer has not read: a watch
+                // reload (an echo of our own write, or one deferred behind a
+                // prompt) can land before the outcome is even drawn. `r` is a
+                // keypress, which already cleared the line, so it answers.
+                if self.status_message.is_none() {
                     self.status_message = Some("reloaded".into());
                 }
-                self.report_closed_note(note_closed);
+                return self.after_absorb(absorbed);
             }
             CommandResult::Discarded {
                 changeset,
                 staged,
                 recovery,
             } => {
-                let note_closed = self.absorb_changeset(changeset, staged);
+                let absorbed = self.absorb_changeset(changeset, staged);
                 self.status_message = Some(
                     match recovery {
                         DiscardRecovery::BackedUp => "hunk discarded — `margin undo` restores it",
@@ -1135,7 +1150,7 @@ impl AppState {
                     }
                     .into(),
                 );
-                self.report_closed_note(note_closed);
+                return self.after_absorb(absorbed);
             }
             // The apply's dry run refused. The likeliest cause depends on
             // the direction: re-staging what's already in the index, or
@@ -1162,15 +1177,15 @@ impl AppState {
                 self.status_message = Some(format!("failed: {err}"));
             }
         }
+        None
     }
 
     /// Swap in a freshly loaded changeset, keeping the user's place: rebuild
     /// rows, re-anchor the cursor via `locate`, rebuild the index-keyed
     /// highlight cache, and recompute search matches.
     ///
-    /// Returns whether an open note editor had to close because its hunk
-    /// is gone, so the caller can say so.
-    fn absorb_changeset(&mut self, changeset: Changeset, staged: Option<StagedFiles>) -> bool {
+    /// Reports what the caller still owes (see [`Absorbed`]).
+    fn absorb_changeset(&mut self, changeset: Changeset, staged: Option<StagedFiles>) -> Absorbed {
         let anchor = self.rows.get(self.cursor).copied();
         // Notes, and the open note editor, are keyed by (file, hunk)
         // *position* — which a reload reorders. Capture each one's
@@ -1199,7 +1214,7 @@ impl AppState {
         });
         self.changeset = changeset;
         let anchor = anchor.zip(anchor_place).map(|(row, (path, hunk))| {
-            if let Some((f, h)) = hunk.and_then(|id| self.locate_hunk(&id, &BTreeMap::new())) {
+            if let Some((f, h)) = hunk.and_then(|id| self.find_hunk(&id)) {
                 row.moved_to(f, Some(h))
             } else if let Some(f) = path.and_then(|p| {
                 self.changeset
@@ -1210,13 +1225,17 @@ impl AppState {
                 // Same file, hunk edited or gone: keep the in-file position.
                 row.moved_to(f, None)
             } else {
-                row
+                // The file itself is gone. Its old index now belongs to
+                // another file: land on a header, where no hunk command
+                // can act by accident.
+                Row::FileHeader { file: row.file() }
             }
         });
-        self.notes = self.relocate_notes(notes);
+        let (relocated, notes_rekeyed) = self.relocate_notes(notes);
+        self.notes = relocated;
         let mut note_closed = false;
         if let Some(target) = editing {
-            match target.and_then(|id| self.locate_hunk(&id, &BTreeMap::new())) {
+            match target.and_then(|id| self.find_hunk(&id)) {
                 Some((file, hunk)) => {
                     if let Some(note) = &mut self.note {
                         note.file = file;
@@ -1282,7 +1301,10 @@ impl AppState {
         if self.picker.is_some() {
             self.refilter_picker();
         }
-        note_closed
+        Absorbed {
+            note_closed,
+            notes_rekeyed,
+        }
     }
 
     /// The identity a note keeps across reloads: its file's path, the
@@ -1291,21 +1313,28 @@ impl AppState {
     fn hunk_identity(&self, file: usize, hunk: usize) -> Option<HunkIdentity> {
         let diff = self.changeset.files.get(file)?;
         let found = diff.hunks.get(hunk)?;
+        let path = path_key(diff)?.to_vec();
+        let twins = self
+            .hunks_at(&path)
+            .filter(|(_, _, other)| other.lines == found.lines)
+            .count();
         Some(HunkIdentity {
-            path: path_key(diff)?.to_vec(),
             digest: margin_core::hunk_digest(found),
             lines: found.lines.clone(),
+            unique_lines: twins == 1,
+            path,
         })
     }
 
     /// Re-key notes against the current changeset. Exact digest matches
     /// claim their hunks first; a note whose hunk only moved then takes
-    /// the one unclaimed hunk in its file with identical lines. Anything
-    /// else detaches — an edited hunk never passes its note to a neighbor.
+    /// its same-lines hunk if still unclaimed. Anything else detaches — an
+    /// edited hunk never passes its note to a neighbor. Also reports
+    /// whether any note's persisted key changed.
     fn relocate_notes(
         &self,
         notes: Vec<(HunkIdentity, String)>,
-    ) -> BTreeMap<(usize, usize), String> {
+    ) -> (BTreeMap<(usize, usize), String>, bool) {
         let mut placed = BTreeMap::new();
         let mut moved = Vec::new();
         for (id, text) in notes {
@@ -1316,12 +1345,20 @@ impl AppState {
                 None => moved.push((id, text)),
             }
         }
+        let mut rekeyed = false;
         for (id, text) in moved {
-            if let Some(key) = self.locate_hunk(&id, &placed) {
+            if let Some(key) = self.moved_hunk(&id, |key| placed.contains_key(key)) {
                 placed.insert(key, text);
+                rekeyed = true;
             }
         }
-        placed
+        (placed, rekeyed)
+    }
+
+    /// The hunk `id` names now, exactly or moved.
+    fn find_hunk(&self, id: &HunkIdentity) -> Option<(usize, usize)> {
+        self.exact_hunk(id)
+            .or_else(|| self.moved_hunk(id, |_| false))
     }
 
     fn exact_hunk(&self, id: &HunkIdentity) -> Option<(usize, usize)> {
@@ -1330,22 +1367,24 @@ impl AppState {
             .map(|(f, h, _)| (f, h))
     }
 
-    /// The hunk `id` names now: an exact digest match, else the only
-    /// unclaimed hunk in the same file with identical lines.
-    fn locate_hunk(
+    /// The hunk `id` became if it only moved: the one unclaimed hunk in
+    /// its file with identical lines. Lines repeated across hunks (in the
+    /// old changeset or the new) cannot say which is which, so they never
+    /// match — two look-alike hunks must not trade notes.
+    fn moved_hunk(
         &self,
         id: &HunkIdentity,
-        claimed: &BTreeMap<(usize, usize), String>,
+        claimed: impl Fn(&(usize, usize)) -> bool,
     ) -> Option<(usize, usize)> {
-        if let Some(key) = self.exact_hunk(id) {
-            return Some(key);
+        if !id.unique_lines {
+            return None;
         }
         let mut same_lines = self
             .hunks_at(&id.path)
-            .filter(|(f, h, hunk)| hunk.lines == id.lines && !claimed.contains_key(&(*f, *h)))
+            .filter(|(_, _, hunk)| hunk.lines == id.lines)
             .map(|(f, h, _)| (f, h));
         match (same_lines.next(), same_lines.next()) {
-            (Some(key), None) => Some(key),
+            (Some(key), None) if !claimed(&key) => Some(key),
             _ => None,
         }
     }
@@ -1422,14 +1461,15 @@ impl AppState {
 /// The only place state changes (ADR-0003). Returns the side effect the
 /// runtime should execute, if the message requested one.
 pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
-    let pending_g = std::mem::take(&mut state.pending_g);
-    // One-shot feedback: the next user interaction clears the previous
-    // message. Resize, command results, and watcher reloads are not
-    // interactions.
-    if !matches!(
+    // One-shot state (feedback, a half-typed `gg`) yields to the next
+    // user interaction. Resize, command results, and watcher reloads are
+    // not interactions.
+    let interaction = !matches!(
         msg,
         Msg::CommandFinished(_) | Msg::Resize(..) | Msg::WatchReload
-    ) {
+    );
+    let pending_g = interaction && std::mem::take(&mut state.pending_g);
+    if interaction {
         state.status_message = None;
     }
     let mut command = None;
@@ -1572,7 +1612,7 @@ pub fn update(state: &mut AppState, msg: Msg) -> Option<Command> {
             }
             state.rebuild_rows_after_fold(file);
         }
-        Msg::CommandFinished(result) => state.finish_command(result),
+        Msg::CommandFinished(result) => command = state.finish_command(result),
         Msg::CursorDown => {
             state.cursor = state.cursor.saturating_add(1);
             state.clamp_cursor();
@@ -2298,11 +2338,25 @@ mod tests {
             state.status_message
         );
 
-        // Real news from the watcher does replace it.
+        // Real news does not wipe it either: a deferred reload fires in
+        // the same loop pass as the key that closed the prompt, before
+        // the outcome was ever drawn.
         update(&mut state, Msg::WatchReload);
         reload(
             &mut state,
             b"--- a/z.txt\n+++ b/z.txt\n@@ -1,1 +1,1 @@\n-z\n+Z\n",
+        );
+        assert!(state
+            .status_message
+            .as_deref()
+            .is_some_and(|m| m.contains("margin undo")));
+
+        // Once read (any key clears it), watcher news announces itself.
+        update(&mut state, Msg::CursorDown);
+        update(&mut state, Msg::WatchReload);
+        reload(
+            &mut state,
+            b"--- a/y.txt\n+++ b/y.txt\n@@ -1,1 +1,1 @@\n-y\n+Y\n",
         );
         assert_eq!(state.status_message.as_deref(), Some("reloaded"));
 
@@ -2350,7 +2404,62 @@ mod tests {
         );
     }
 
-    fn reload(state: &mut AppState, patch: &[u8]) {
+    /// Two hunks with identical lines (repetitive code) cannot be told
+    /// apart once their positions shift, so neither may take the other's
+    /// note — detaching is the honest outcome.
+    #[test]
+    fn identical_hunks_never_trade_notes() {
+        let twins = b"--- a/f.rs\n+++ b/f.rs\n@@ -10,1 +10,2 @@\n x\n+dup\n\
+            @@ -50,1 +51,2 @@\n x\n+dup\n";
+        let mut state = AppState::new(parse_unified(twins).changeset);
+        update(&mut state, Msg::Resize(80, 24));
+        update(&mut state, Msg::NextHunk);
+        type_note(&mut state, "note A");
+        update(&mut state, Msg::NoteSubmit);
+        assert_eq!(state.note_for(0, 0), Some("note A"));
+
+        // A was staged; B (same lines) shifted.
+        reload(
+            &mut state,
+            b"--- a/f.rs\n+++ b/f.rs\n@@ -51,1 +51,2 @@\n x\n+dup\n",
+        );
+        assert_ne!(state.note_for(0, 0), Some("note A"), "A's note is not B's");
+    }
+
+    /// If the cursor's file is gone after a reload, the cursor must not
+    /// land inside whichever file took its index — `s` would act there.
+    #[test]
+    fn cursor_never_lands_in_another_files_hunk() {
+        let mut state = AppState::new(parse_unified(&[A_HUNK, B_HUNK].concat()).changeset);
+        update(&mut state, Msg::Resize(80, 24));
+        update(&mut state, Msg::NextHunk);
+        update(&mut state, Msg::NextHunk);
+        update(&mut state, Msg::CursorDown);
+        assert_eq!(state.rows.get(state.cursor).map(Row::file), Some(1));
+
+        let c_hunk: &[u8] = b"diff --git a/c.txt b/c.txt\n--- a/c.txt\n+++ b/c.txt\n\
+            @@ -1,1 +1,1 @@\n-c\n+C\n";
+        reload(&mut state, &[A_HUNK, c_hunk].concat());
+        assert!(
+            matches!(state.rows.get(state.cursor), Some(Row::FileHeader { .. })),
+            "{:?}",
+            state.rows.get(state.cursor)
+        );
+    }
+
+    /// A watcher reload is not a keypress: it must not cancel `gg`.
+    #[test]
+    fn watch_reload_keeps_a_half_typed_chord() {
+        let mut state = sample();
+        update(&mut state, Msg::Resize(80, 24));
+        update(&mut state, Msg::Bottom);
+        update(&mut state, Msg::GKey);
+        update(&mut state, Msg::WatchReload);
+        update(&mut state, Msg::GKey);
+        assert_eq!(state.cursor, 0, "gg still jumps to the top");
+    }
+
+    fn reload(state: &mut AppState, patch: &[u8]) -> Option<Command> {
         let changeset = parse_unified(patch).changeset;
         update(
             state,
@@ -2358,7 +2467,7 @@ mod tests {
                 changeset,
                 staged: None,
             }),
-        );
+        )
     }
 
     fn type_note(state: &mut AppState, text: &str) {
@@ -2417,8 +2526,18 @@ mod tests {
         // The first hunk was staged: the second is now the only one, and
         // its old side moved down a line.
         let shifted = b"--- a/f.txt\n+++ b/f.txt\n@@ -11,1 +11,2 @@\n ten\n+eleven\n";
-        reload(&mut state, shifted);
+        let follow_up = reload(&mut state, shifted);
         assert_eq!(state.note_for(0, 0), Some("second hunk"));
+        // Its digest changed with its position: persist the new key now,
+        // or the note is gone on the next launch and from `--notes`.
+        let Some(Command::SaveReviewState { notes, .. }) = follow_up else {
+            panic!("a re-keyed note must persist itself: {follow_up:?}");
+        };
+        let file = &state.changeset.files[0];
+        let key = path_key(file).unwrap_or_default().to_vec();
+        let digest = margin_core::hunk_digest(&file.hunks[0]);
+        assert_eq!(notes, [(key, digest, "second hunk".to_string())]);
+        assert_eq!(reload(&mut state, shifted), None, "nothing moved: no write");
 
         let edited = b"--- a/f.txt\n+++ b/f.txt\n@@ -11,1 +11,2 @@\n ten\n+ELEVEN\n";
         reload(&mut state, edited);

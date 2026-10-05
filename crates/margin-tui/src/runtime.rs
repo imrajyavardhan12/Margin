@@ -252,10 +252,17 @@ pub fn run(
 
 /// One message through the core; any requested effect executes and its
 /// outcome feeds straight back in as a message (the command loop).
+/// Run `msg` and any commands it leads to. A finished command may owe a
+/// follow-up (a reload that re-keyed notes persists them); persistence
+/// results owe nothing, so chains are short — the cap only guards against
+/// a future loop, never the normal path.
 fn dispatch(state: &mut AppState, msg: Msg, executor: &mut dyn CommandExecutor) {
-    if let Some(command) = update(state, msg) {
+    const MAX_FOLLOW_UPS: usize = 4;
+    let mut next = update(state, msg);
+    for _ in 0..=MAX_FOLLOW_UPS {
+        let Some(command) = next else { return };
         let result = executor.execute(command);
-        update(state, Msg::CommandFinished(result));
+        next = update(state, Msg::CommandFinished(result));
     }
 }
 

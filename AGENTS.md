@@ -144,8 +144,9 @@ Dependency rule (compiler-enforced, do not work around):
   and the cursor anchor are keyed by `(file, hunk)` *position*, and a
   reload (watch, stage, discard) reorders files and hunks. Anything
   positional must be re-found by identity in `absorb_changeset` (path +
-  `hunk_digest`, falling back to identical lines) — otherwise feedback
-  silently lands on another file's hunk.
+  `hunk_digest`, falling back to lines unique in the file) — otherwise
+  feedback silently lands on another hunk. A re-keyed note must also be
+  persisted (`finish_command` returns the save; `dispatch` chains it).
 - **inotify reports reads.** `notify` on Linux emits `Access(Open)` for
   every file Margin itself opens, so a watcher that ignores event kinds
   turns each reload into the trigger for the next (an idle CPU loop that

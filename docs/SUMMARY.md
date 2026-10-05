@@ -40,6 +40,7 @@
   - [0024 — SHA-pinned CI supply chain](adr/0024-sha-pinned-ci-supply-chain.md)
   - [0025 — crates.io package identity](adr/0025-crates-io-package-identity.md)
   - [0026 — No background highlight warming](adr/0026-no-background-highlight-warming.md)
+  - [0027 — Refuse ignored review input](adr/0027-refuse-ignored-review-input.md)
   - [ADR template](adr/template.md)
 
 # Project history

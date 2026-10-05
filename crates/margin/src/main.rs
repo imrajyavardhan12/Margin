@@ -34,7 +34,9 @@ use review::{ReviewOptions, ReviewSession};
     version,
     about = "A fast, keyboard-first terminal diff viewer",
     long_about = "Review Git changes, patches, and AI-authored code without leaving the terminal.\n\
-                  Run with no arguments to review the working tree (untracked files included).",
+                  Run with no arguments to review the working tree (untracked files included).\n\
+                  To review a diff from stdin, use `margin patch`: a bare `margin` on a terminal\n\
+                  refuses piped input rather than ignore it (ADR-0027).",
     after_help = "Exit status: 0 clean completion · 1 operational failure or usable output with warnings · 2 invalid invocation (ADR-0022)."
 )]
 struct Cli {
@@ -134,6 +136,22 @@ enum Command {
     Man,
 }
 
+impl Command {
+    /// The verb as typed, for messages.
+    fn verb(&self) -> &'static str {
+        match self {
+            Command::Diff(_) => "diff",
+            Command::Show { .. } => "show",
+            Command::Patch { .. } => "patch",
+            Command::Pr { .. } => "pr",
+            Command::Pager => "pager",
+            Command::Undo => "undo",
+            Command::Completions { .. } => "completions",
+            Command::Man => "man",
+        }
+    }
+}
+
 #[derive(Args)]
 struct DiffArgs {
     /// Review the index (staged changes) instead of the working tree
@@ -190,6 +208,69 @@ fn main() -> ExitCode {
         print!("{}", config.dump());
         return ExitCode::SUCCESS;
     }
+    // Root `--staged`/`-w` describe a working-tree review. Reviewing a
+    // different changeset than the one asked for is the worst failure a
+    // review tool has, so they reach `diff` or refuse loudly (ADR-0027) —
+    // never vanish. Pager is exempt: its passthrough contract outranks
+    // any flag (`git log | grep` must never fail on our account).
+    let command = match cli.command {
+        None => {
+            // Issue #119, ADR-0027: `git diff | margin` would review the
+            // working tree and drop the pipe. Refused only where the TUI
+            // would open — a person at a terminal who piped a diff in.
+            // Documents (`--json`, `--notes`) and piped summaries are what
+            // scripts, hooks, ssh, and agent subprocesses run, and those
+            // routinely hand over a stdin pipe that means nothing.
+            let interactive = !cli.json && !cli.notes && std::io::stdout().is_terminal();
+            if interactive && stdin_is_redirected() {
+                let (what, explicit) = if cli.staged {
+                    ("the index", "margin diff --staged")
+                } else {
+                    ("the working tree", "margin diff")
+                };
+                let label = format!("review {what}:");
+                eprintln!(
+                    "margin: stdin is redirected, but `margin` alone does not read it\n  \
+                     {:<27}... | margin patch\n  \
+                     {label:<27}{explicit}",
+                    "review the diff on stdin:"
+                );
+                return ExitCode::from(2);
+            }
+            Command::Diff(DiffArgs {
+                staged: cli.staged,
+                watch: cli.watch,
+                json: cli.json,
+                targets: Vec::new(),
+            })
+        }
+        Some(Command::Diff(mut args)) => {
+            args.staged |= cli.staged;
+            args.watch |= cli.watch;
+            Command::Diff(args)
+        }
+        Some(Command::Pager) => Command::Pager,
+        Some(other) => {
+            // `undo` writes the working tree; a document flag there would
+            // vanish while a real write happens instead.
+            let undo = matches!(other, Command::Undo);
+            if let Some(flag) = [
+                (cli.staged, "--staged"),
+                (cli.watch, "--watch"),
+                (undo && cli.json, "--json"),
+                (undo && cli.notes, "--notes"),
+            ]
+            .into_iter()
+            .find_map(|(set, flag)| set.then_some(flag))
+            {
+                eprintln!("margin: {flag} does not apply to `margin {}`", other.verb());
+                return ExitCode::from(2);
+            }
+            other
+        }
+    };
+    // Invocation checks above run before this: an `auto` theme queries
+    // the terminal, and a refusal must not leave a reply in the prompt.
     // "auto" resolves to a real theme name here, before Theme::resolve —
     // the TUI never knows detection happened (issue #27). Config wins:
     // any explicit theme skips the terminal query entirely.
@@ -217,48 +298,6 @@ fn main() -> ExitCode {
             THEME_NAMES.join(", ")
         );
         return ExitCode::from(2);
-    };
-    // Root `--staged`/`-w` describe a working-tree review. Reviewing a
-    // different changeset than the one asked for is the worst failure a
-    // review tool has, so they reach `diff` or refuse loudly (ADR-0007) —
-    // never vanish. Pager is exempt: its passthrough contract outranks
-    // any flag (`git log | grep` must never fail on our account).
-    let command = match cli.command {
-        None => {
-            // Issue #119: `git diff | margin` would review the working
-            // tree and drop the pipe. Ambiguous intent refuses; it does
-            // not guess (and reading stdin here could eat a script's input).
-            if stdin_is_redirected() {
-                eprintln!(
-                    "margin: stdin is redirected, but `margin` alone reviews the working tree\n  \
-                     review the diff on stdin:  ... | margin patch\n  \
-                     review the working tree:   margin diff"
-                );
-                return ExitCode::from(2);
-            }
-            Command::Diff(DiffArgs {
-                staged: cli.staged,
-                watch: cli.watch,
-                json: cli.json,
-                targets: Vec::new(),
-            })
-        }
-        Some(Command::Diff(mut args)) => {
-            args.staged |= cli.staged;
-            args.watch |= cli.watch;
-            Command::Diff(args)
-        }
-        Some(Command::Pager) => Command::Pager,
-        Some(other) => {
-            if let Some(flag) = [(cli.staged, "--staged"), (cli.watch, "--watch")]
-                .into_iter()
-                .find_map(|(set, flag)| set.then_some(flag))
-            {
-                eprintln!("margin: {flag} applies only to `margin diff` reviews");
-                return ExitCode::from(2);
-            }
-            other
-        }
     };
 
     // Pager mode never emits JSON: its piped output is byte-identical by
